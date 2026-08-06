@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: "Inter", sans-serif;
+  }
+  body {
+    @apply text-mist-700 antialiased;
+  }
+  ::selection {
+    @apply bg-teal-100 text-teal-700;
+  }
+  *:focus-visible {
+    outline: 2px solid #0EA5B7;
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #C9D1DC;
+    border-radius: 999px;
+  }
+}
