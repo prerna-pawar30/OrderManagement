@@ -7,6 +7,7 @@ const TITLES = {
   "/orders": "Orders",
   "/orders/new": "New manual order",
   "/invoices": "Invoices",
+  "/analytics": "Analytics",
 };
 
 export default function DashboardLayout() {

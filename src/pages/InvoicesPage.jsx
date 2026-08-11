@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { FileText, Loader2, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
-import { ManualOrderService, InvoiceService } from "../api/services";
+import { ManualOrderService, InvoiceService, buildInvoicePayloadFromOrder } from "../api/services";
 import { formatCurrency, formatDateTime } from "../lib/format";
 import { PaymentStatusBadge } from "../components/StatusBadge";
 
@@ -29,18 +29,7 @@ export default function InvoicesPage() {
   const regenerate = async (order) => {
     setRegeneratingId(order.orderId);
     try {
-      await InvoiceService.create({
-        orderId: order.orderId,
-        customerName: order.customerName,
-        customerEmail: order.customerEmail,
-        customerPhone: order.customerPhone,
-        organizationName: order.organizationName,
-        gstNumber: order.gstNumber,
-        items: order.items,
-        grandTotal: order.grandTotal,
-        billingAddress: order.billingAddress,
-        paymentStatus: order.paymentStatus,
-      });
+      await InvoiceService.create(buildInvoicePayloadFromOrder(order));
       toast.success(`Invoice regenerated for ${order.orderId}`);
     } catch (err) {
       toast.error(err?.response?.data?.message || "Could not generate this invoice");

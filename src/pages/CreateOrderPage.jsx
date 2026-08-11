@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Plus, Trash2, Loader2, ArrowLeft } from "lucide-react";
 import toast from "react-hot-toast";
 import { Field, TextInput, Select, TextArea } from "../components/FormField";
-import { ManualOrderService, InvoiceService } from "../api/services";
+import { ManualOrderService, InvoiceService, buildInvoicePayloadFromOrder } from "../api/services";
 import { formatCurrency } from "../lib/format";
 
 const emptyItem = () => ({ productName: "", variantName: "", sku: "", price: "", quantity: 1, notes: "" });
@@ -102,19 +102,7 @@ export default function CreateOrderPage() {
 
       // Auto-create the invoice right after the order is placed.
       try {
-        await InvoiceService.create({
-          orderId: order?.orderId,
-          orderRef: order?._id,
-          customerName: order?.customerName,
-          customerEmail: order?.customerEmail,
-          customerPhone: order?.customerPhone,
-          organizationName: order?.organizationName,
-          gstNumber: order?.gstNumber,
-          items: order?.items,
-          grandTotal: order?.grandTotal,
-          billingAddress: order?.billingAddress,
-          paymentStatus: order?.paymentStatus,
-        });
+        await InvoiceService.create(buildInvoicePayloadFromOrder(order));
         toast.success("Invoice generated");
       } catch (invErr) {
         toast.error(

@@ -1,11 +1,12 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { LayoutGrid, PackagePlus, ClipboardList, FileText, X } from "lucide-react";
+import { LayoutGrid, PackagePlus, ClipboardList, FileText, BarChart3, X } from "lucide-react";
 
 const NAV_ITEMS = [
   { to: "/orders", label: "Orders", icon: ClipboardList },
   { to: "/orders/new", label: "New order", icon: PackagePlus },
   { to: "/invoices", label: "Invoices", icon: FileText },
+  { to: "/analytics", label: "Analytics", icon: BarChart3 },
 ];
 
 export default function Sidebar({ open, onClose }) {

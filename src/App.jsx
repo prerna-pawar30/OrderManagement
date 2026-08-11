@@ -5,6 +5,7 @@ import DashboardLayout from "./layout/DashboardLayout";
 import OrdersListPage from "./pages/OrdersListPage";
 import CreateOrderPage from "./pages/CreateOrderPage";
 import InvoicesPage from "./pages/InvoicesPage";
+import AnalyticsPage from "./pages/AnalyticsPage";
 import ProtectedRoute from "./routes/ProtectedRoute";
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
         <Route path="/orders" element={<OrdersListPage />} />
         <Route path="/orders/new" element={<CreateOrderPage />} />
         <Route path="/invoices" element={<InvoicesPage />} />
+        <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/" element={<Navigate to="/orders" replace />} />
       </Route>
 

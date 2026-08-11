@@ -8,6 +8,7 @@ const FULL_API_PATH = `${BASE_URL}${VERSION}`;
 export const PERMISSIONS = {
   ORDER_READ: "order-get",
   ORDER_WRITE: "Order-create",
+  INVOICE_WRITE: "sales.invoice.generate",
 };
 
 // Every value here is a full, absolute URL (protocol + host + /api/v1 + path).
@@ -37,6 +38,8 @@ export const API_ROUTES = {
     CANCEL: (orderId) => `${FULL_API_PATH}/manual-order/cancel/${orderId}`,
     COURIER_UPDATE: (orderId) => `${FULL_API_PATH}/manual-order/courier/${orderId}`,
     RETURN_CREATE: `${FULL_API_PATH}/manual-order/return`,
+    ANALYTICS: (permission = PERMISSIONS.ORDER_READ) =>
+      `${FULL_API_PATH}/manual-order/analytics/${permission}`,
   },
   INVOICE: {
     CREATE: `${FULL_API_PATH}/invoice/create`,
