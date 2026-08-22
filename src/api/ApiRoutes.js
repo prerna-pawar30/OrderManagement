@@ -8,7 +8,9 @@ const FULL_API_PATH = `${BASE_URL}${VERSION}`;
 export const PERMISSIONS = {
   ORDER_READ: "order-get",
   ORDER_WRITE: "Order-create",
-  INVOICE_WRITE: "sales.invoice.generate",
+  INVOICE_READ: "invoice.manage.read", // TODO: confirm this permission slug matches what's in your Permission collection
+  INVOICE_CREATE: "invoice.manage.create",
+  INVOICE_UPDATE: "invoice.manage.update",
 };
 
 // Every value here is a full, absolute URL (protocol + host + /api/v1 + path).
@@ -35,13 +37,30 @@ export const API_ROUTES = {
     GET_ONE: (orderId, permission = PERMISSIONS.ORDER_READ) =>
       `${FULL_API_PATH}/manual-order/get/${orderId}/${permission}`,
     STATUS_UPDATE: (orderId) => `${FULL_API_PATH}/manual-order/status/${orderId}`,
+    PAYMENT_STATUS_UPDATE: (orderId) => `${FULL_API_PATH}/manual-order/payment-status/${orderId}`,
     CANCEL: (orderId) => `${FULL_API_PATH}/manual-order/cancel/${orderId}`,
     COURIER_UPDATE: (orderId) => `${FULL_API_PATH}/manual-order/courier/${orderId}`,
     RETURN_CREATE: `${FULL_API_PATH}/manual-order/return`,
     ANALYTICS: (permission = PERMISSIONS.ORDER_READ) =>
       `${FULL_API_PATH}/manual-order/analytics/${permission}`,
+    CUSTOMER_LEDGER: (permission = PERMISSIONS.ORDER_READ) =>
+      `${FULL_API_PATH}/manual-order/ledger/${permission}`,
+    CREDIT_SETTLE: (orderId) => `${FULL_API_PATH}/manual-order/credit-settle/${orderId}`,
+    CREDIT_NOTES: (permission = PERMISSIONS.ORDER_READ) =>
+      `${FULL_API_PATH}/manual-order/credit-notes/${permission}`,
   },
   INVOICE: {
-    CREATE: `${FULL_API_PATH}/invoice/create`,
+    // Real invoice backend — untouched. Called directly from the frontend.
+    CREATE: `${FULL_API_PATH}/invoice/manage/create`,
+    UPDATE: (invoiceId) => `${FULL_API_PATH}/invoice/manage/update/${invoiceId}`,
+    DELETE: (invoiceId) => `${FULL_API_PATH}/invoice/manage/delete/${invoiceId}`,
+    GET_BY_ID: (invoiceId, permission = PERMISSIONS.INVOICE_READ) =>
+      `${FULL_API_PATH}/invoice/manage/get/${invoiceId}/${permission}`,
+    GET_ALL: (permission = PERMISSIONS.INVOICE_READ, page = 1, limit = 20) =>
+      `${FULL_API_PATH}/invoice/manage/get/${permission}?page=${page}&limit=${limit}`,
+    GET_BY_MONTH_YEAR: (permission = PERMISSIONS.INVOICE_READ) =>
+      `${FULL_API_PATH}/invoice/manage/get/${permission}`,
+    GET_CUSTOMERS: `${FULL_API_PATH}/invoice/customers`,
+    GET_CUSTOMER_INVOICES_BY_ID: (customerNo) => `${FULL_API_PATH}/invoice/customer/${customerNo}`,
   },
 };

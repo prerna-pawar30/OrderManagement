@@ -33,17 +33,17 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="grid min-h-screen grid-cols-1 lg:grid-cols-2">
-      <div className="relative hidden flex-col justify-between bg-ink-950 p-12 text-mist-100 lg:flex">
+    <div className="grid min-h-screen grid-cols-1 md:grid-cols-2">
+      <div className="relative hidden flex-col justify-between bg-ink-950 p-8 text-mist-100 md:flex md:p-10 lg:p-12">
         <div className="flex items-center gap-2">
-          <span className="grid h-9 w-9 place-items-center rounded-lg bg-teal-500 font-display font-extrabold text-ink-950">
+          <span className="grid h-9 w-9 place-items-center rounded-lg bg-orange-500 font-display font-extrabold text-ink-950">
             D
           </span>
           <span className="font-display text-base font-bold text-white">Digident</span>
         </div>
 
         <div>
-          <p className="font-display text-3xl font-extrabold leading-tight text-white">
+          <p className="font-display text-2xl font-extrabold leading-tight text-white lg:text-3xl">
             One counter for every
             <br />
             manual order, invoice
@@ -59,18 +59,18 @@ export default function LoginPage() {
         <p className="text-xs text-mist-400">© {new Date().getFullYear()} Digident Internal Tools</p>
       </div>
 
-      <div className="flex items-center justify-center px-6 py-16">
+      <div className="flex items-center justify-center bg-white px-6 py-16 dark:bg-ink-950">
         <form onSubmit={handleSubmit} className="w-full max-w-sm">
-          <h1 className="font-display text-2xl font-bold text-ink-950">Sign in</h1>
-          <p className="mt-1 text-sm text-mist-500">Use your staff account to open the console.</p>
+          <h1 className="font-display text-2xl font-bold text-ink-950 dark:text-white">Sign in</h1>
+          <p className="mt-1 text-sm text-mist-500 dark:text-mist-300">Use your staff account to open the console.</p>
 
           <div className="mt-8 space-y-4">
             <label className="block">
-              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-mist-500">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-mist-500 dark:text-mist-300">
                 Email
               </span>
-              <div className="flex items-center gap-2 rounded-lg border border-mist-200 bg-white px-3.5 py-2.5 focus-within:border-teal-500">
-                <Mail size={16} className="text-mist-500" />
+              <div className="flex items-center gap-2 rounded-lg border border-mist-200 bg-white px-3.5 py-2.5 focus-within:border-orange-500 dark:border-ink-700 dark:bg-ink-900">
+                <Mail size={16} className="text-mist-500 dark:text-mist-300" />
                 <input
                   type="email"
                   required
@@ -78,17 +78,17 @@ export default function LoginPage() {
                   value={form.email}
                   onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
                   placeholder="you@digident.in"
-                  className="w-full bg-transparent text-sm text-ink-950 outline-none placeholder:text-mist-300"
+                  className="w-full bg-transparent text-sm text-ink-950 outline-none placeholder:text-mist-300 dark:text-white dark:placeholder:text-mist-500"
                 />
               </div>
             </label>
 
             <label className="block">
-              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-mist-500">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-mist-500 dark:text-mist-300">
                 Password
               </span>
-              <div className="flex items-center gap-2 rounded-lg border border-mist-200 bg-white px-3.5 py-2.5 focus-within:border-teal-500">
-                <Lock size={16} className="text-mist-500" />
+              <div className="flex items-center gap-2 rounded-lg border border-mist-200 bg-white px-3.5 py-2.5 focus-within:border-orange-500 dark:border-ink-700 dark:bg-ink-900">
+                <Lock size={16} className="text-mist-500 dark:text-mist-300" />
                 <input
                   type="password"
                   required
@@ -96,13 +96,13 @@ export default function LoginPage() {
                   value={form.password}
                   onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
                   placeholder="••••••••"
-                  className="w-full bg-transparent text-sm text-ink-950 outline-none placeholder:text-mist-300"
+                  className="w-full bg-transparent text-sm text-ink-950 outline-none placeholder:text-mist-300 dark:text-white dark:placeholder:text-mist-500"
                 />
               </div>
             </label>
 
             {error && (
-              <p className="rounded-lg bg-coral-100 px-3 py-2 text-xs font-medium text-coral-500">
+              <p className="rounded-lg bg-coral-100 px-3 py-2 text-xs font-medium text-coral-500 dark:bg-coral-500/15 dark:text-coral-400">
                 {error}
               </p>
             )}
@@ -110,7 +110,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-teal-500 py-2.5 text-sm font-semibold text-white transition hover:bg-teal-600 disabled:opacity-60"
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-orange-500 py-2.5 text-sm font-semibold text-white transition hover:bg-orange-600 disabled:opacity-60"
             >
               {loading && <Loader2 size={15} className="animate-spin" />}
               Sign in

@@ -7,13 +7,13 @@
     font-family: "Inter", sans-serif;
   }
   body {
-    @apply text-mist-700 antialiased;
+    @apply bg-mist-50 text-mist-700 antialiased dark:bg-ink-950 dark:text-mist-300;
   }
   ::selection {
-    @apply bg-teal-100 text-teal-700;
+    @apply bg-orange-100 text-orange-700;
   }
   *:focus-visible {
-    outline: 2px solid #0EA5B7;
+    outline: 2px solid #F2701C;
     outline-offset: 2px;
   }
 }
@@ -24,7 +24,10 @@
     height: 6px;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: #C9D1DC;
+    background: #C7C7C7;
     border-radius: 999px;
+  }
+  .dark .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #3D3D3D;
   }
 }

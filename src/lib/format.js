@@ -14,6 +14,12 @@ export const formatCompactCurrency = (value) =>
     maximumFractionDigits: 1,
   }).format(Number(value) || 0);
 
+// All dates from the backend are stored in UTC. Without an explicit
+// timeZone, the browser's own local zone gets used to render them — for
+// most staff that's fine (they're in India), but this makes it correct
+// regardless of the device/browser's own settings.
+const IST = "Asia/Kolkata";
+
 export const formatDate = (value) => {
   if (!value) return "—";
   const d = new Date(value);
@@ -22,6 +28,7 @@ export const formatDate = (value) => {
     day: "2-digit",
     month: "short",
     year: "numeric",
+    timeZone: IST,
   });
 };
 
@@ -32,6 +39,7 @@ export const formatDateTime = (value) => {
   return `${formatDate(value)} · ${d.toLocaleTimeString("en-IN", {
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: IST,
   })}`;
 };
 

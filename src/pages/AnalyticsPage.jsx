@@ -9,10 +9,27 @@ import Switch from "@mui/material/Switch";
 import { BarChart } from "@mui/x-charts/BarChart";
 import { LineChart } from "@mui/x-charts/LineChart";
 import { PieChart } from "@mui/x-charts/PieChart";
+import { RadarChart } from "@mui/x-charts/RadarChart";
+import { ScatterChart } from "@mui/x-charts/ScatterChart";
 
 import { ManualOrderService } from "../api/services";
 import { formatCurrency, formatCompactCurrency } from "../lib/format";
-import muiTheme, { STATUS_COLORS, CHART_PALETTE } from "../theme/muiTheme";
+import { getMuiTheme, STATUS_COLORS, CHART_PALETTE, FUNNEL_RAMP } from "../theme/muiTheme";
+import FulfillmentFunnel from "../components/FulfillmentFunnel";
+import { useTheme } from "../context/ThemeContext";
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < 640
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    const onChange = (e) => setIsMobile(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return isMobile;
+}
 
 const ORDER_STATUS_ORDER = [
   "placed",
@@ -27,6 +44,18 @@ const ORDER_STATUS_ORDER = [
 
 const PAYMENT_STATUS_ORDER = ["pending", "paid", "refund_pending", "partial_refunded", "refunded"];
 
+// Forward fulfillment pipeline only — cancelled orders never reach it, so
+// they're excluded rather than shown as a "stage".
+const FUNNEL_STAGES = [
+  { stage: "placed", label: "Placed" },
+  { stage: "packed", label: "Packed" },
+  { stage: "confirmed", label: "Confirmed" },
+  { stage: "shipped", label: "Shipped" },
+  { stage: "delivered", label: "Delivered" },
+];
+
+const RADAR_METRICS = ["Units sold", "Revenue", "Orders"];
+
 const LOCATION_TABS = [
   { key: "salesByCity", label: "City", field: "city" },
   { key: "salesByState", label: "State", field: "state" },
@@ -37,34 +66,37 @@ const labelize = (v) => (v ? v.replace(/_/g, " ").replace(/^\w/, (c) => c.toUppe
 
 function StatTile({ label, value, sub }) {
   return (
-    <div className="rounded-xl2 border border-mist-200 bg-white p-4 shadow-panel">
-      <p className="text-xs font-medium uppercase tracking-wide text-mist-500">{label}</p>
-      <p className="mt-1.5 font-display text-2xl font-bold text-ink-950">{value}</p>
-      {sub && <p className="mt-0.5 text-xs text-mist-500">{sub}</p>}
+    <div className="rounded-xl2 border border-mist-200 bg-white p-4 shadow-panel dark:border-white/10 dark:bg-ink-900">
+      <p className="text-xs font-medium uppercase tracking-wide text-mist-500 dark:text-mist-300">{label}</p>
+      <p className="mt-1.5 font-display text-2xl font-bold text-ink-950 dark:text-white">{value}</p>
+      {sub && <p className="mt-0.5 text-xs text-mist-500 dark:text-mist-300">{sub}</p>}
     </div>
   );
 }
 
 function ChartCard({ title, subtitle, children, empty }) {
   return (
-    <div className="rounded-xl2 border border-mist-200 bg-white p-4 shadow-panel sm:p-5">
+    <div className="rounded-xl2 border border-mist-200 bg-white p-4 shadow-panel dark:border-white/10 dark:bg-ink-900 sm:p-5">
       <div className="mb-2">
-        <h3 className="font-display text-sm font-bold text-ink-950">{title}</h3>
-        {subtitle && <p className="text-xs text-mist-500">{subtitle}</p>}
+        <h3 className="font-display text-sm font-bold text-ink-950 dark:text-white">{title}</h3>
+        {subtitle && <p className="text-xs text-mist-500 dark:text-mist-300">{subtitle}</p>}
       </div>
       {empty ? (
         <div className="flex flex-col items-center justify-center gap-2 py-14 text-center">
-          <Inbox size={22} className="text-mist-300" />
-          <p className="text-xs text-mist-500">No data for this range</p>
+          <Inbox size={22} className="text-mist-300 dark:text-mist-500" />
+          <p className="text-xs text-mist-500 dark:text-mist-300">No data for this range</p>
         </div>
       ) : (
-        children
+        <div className="overflow-x-auto">{children}</div>
       )}
     </div>
   );
 }
 
 export default function AnalyticsPage() {
+  const { theme } = useTheme();
+  const muiTheme = useMemo(() => getMuiTheme(theme), [theme]);
+  const isMobile = useIsMobile();
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const monthAgo = useMemo(
     () => new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10),
@@ -124,7 +156,7 @@ export default function AnalyticsPage() {
       id: r.status,
       value: r.count,
       label: labelize(r.status),
-      color: STATUS_COLORS[r.status] || "#667085",
+      color: STATUS_COLORS[r.status] || "#6B6B6B",
     }));
   }, [data]);
 
@@ -141,6 +173,49 @@ export default function AnalyticsPage() {
     [data]
   );
 
+  // Cumulative "reached at least this stage" counts, computed from current
+  // orderStatus snapshots — a delivered (or later) order reached every
+  // earlier stage too, so each stage sums itself plus everything after it.
+  const funnelStages = useMemo(() => {
+    const rows = data?.ordersByStatus || [];
+    const countOf = (s) => rows.find((r) => r.status === s)?.count || 0;
+    const reachedDelivered = countOf("delivered") + countOf("partial_returned") + countOf("returned");
+    const raw = {
+      placed: countOf("placed") + countOf("packed") + countOf("confirmed") + countOf("shipped") + reachedDelivered,
+      packed: countOf("packed") + countOf("confirmed") + countOf("shipped") + reachedDelivered,
+      confirmed: countOf("confirmed") + countOf("shipped") + reachedDelivered,
+      shipped: countOf("shipped") + reachedDelivered,
+      delivered: reachedDelivered,
+    };
+    return FUNNEL_STAGES.map((s, i) => ({
+      ...s,
+      count: raw[s.stage],
+      color: FUNNEL_RAMP[i].bg,
+      text: FUNNEL_RAMP[i].text,
+    }));
+  }, [data]);
+  const funnelHasData = funnelStages.some((s) => s.count > 0);
+
+  const radarProducts = useMemo(() => [...(data?.topProducts || [])].slice(0, 5), [data]);
+  const radarMax = useMemo(
+    () => ({
+      units: Math.max(1, ...radarProducts.map((p) => p.totalQuantitySold)),
+      revenue: Math.max(1, ...radarProducts.map((p) => p.totalRevenue)),
+      orders: Math.max(1, ...radarProducts.map((p) => p.totalOrders)),
+    }),
+    [radarProducts]
+  );
+
+  const scatterPoints = useMemo(
+    () =>
+      (data?.salesTrend || []).map((d) => ({
+        id: d.date,
+        x: d.totalOrders,
+        y: d.totalRevenue,
+      })),
+    [data]
+  );
+
   const activeLocationTab = LOCATION_TABS.find((t) => t.key === locationTab);
   const locationRows = useMemo(
     () =>
@@ -154,27 +229,27 @@ export default function AnalyticsPage() {
     <ThemeProvider theme={muiTheme}>
       <div className="space-y-5">
         {/* ---------- FILTERS ---------- */}
-        <div className="flex flex-col gap-3 rounded-xl2 border border-mist-200 bg-white p-4 shadow-panel sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-xl2 border border-mist-200 bg-white p-4 shadow-panel dark:border-white/10 dark:bg-ink-900 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
-              <label className="text-xs font-medium text-mist-500">From</label>
+              <label className="text-xs font-medium text-mist-500 dark:text-mist-300">From</label>
               <input
                 type="date"
                 value={filters.startDate}
                 max={filters.endDate}
                 onChange={(e) => setFilters((f) => ({ ...f, startDate: e.target.value }))}
-                className="rounded-lg border border-mist-200 px-2.5 py-1.5 text-xs outline-none focus:border-teal-500"
+                className="rounded-lg border border-mist-200 bg-white px-2.5 py-1.5 text-xs text-ink-950 outline-none focus:border-orange-500 dark:border-ink-700 dark:bg-ink-900 dark:text-white"
               />
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-xs font-medium text-mist-500">To</label>
+              <label className="text-xs font-medium text-mist-500 dark:text-mist-300">To</label>
               <input
                 type="date"
                 value={filters.endDate}
                 min={filters.startDate}
                 max={today}
                 onChange={(e) => setFilters((f) => ({ ...f, endDate: e.target.value }))}
-                className="rounded-lg border border-mist-200 px-2.5 py-1.5 text-xs outline-none focus:border-teal-500"
+                className="rounded-lg border border-mist-200 bg-white px-2.5 py-1.5 text-xs text-ink-950 outline-none focus:border-orange-500 dark:border-ink-700 dark:bg-ink-900 dark:text-white"
               />
             </div>
             <ToggleButtonGroup
@@ -200,26 +275,26 @@ export default function AnalyticsPage() {
                   }
                 />
               }
-              label={<span className="text-xs text-mist-700">Include cancelled</span>}
+              label={<span className="text-xs text-mist-700 dark:text-mist-300">Include cancelled</span>}
             />
           </div>
           <button
             onClick={load}
             disabled={loading}
-            className="flex items-center justify-center gap-1.5 self-start rounded-lg border border-mist-200 px-3 py-1.5 text-xs font-semibold text-mist-700 hover:bg-mist-50 disabled:opacity-50"
+            className="flex items-center justify-center gap-1.5 self-start rounded-lg border border-mist-200 px-3 py-1.5 text-xs font-semibold text-mist-700 hover:bg-mist-50 disabled:opacity-50 dark:border-white/10 dark:text-mist-300 dark:hover:bg-white/5"
           >
             <RefreshCw size={13} className={loading ? "animate-spin" : ""} /> Refresh
           </button>
         </div>
 
         {loading && !data ? (
-          <div className="flex items-center justify-center gap-2 rounded-xl2 border border-mist-200 bg-white py-20 text-sm text-mist-500 shadow-panel">
+          <div className="flex items-center justify-center gap-2 rounded-xl2 border border-mist-200 bg-white py-20 text-sm text-mist-500 shadow-panel dark:border-white/10 dark:bg-ink-900 dark:text-mist-300">
             <Loader2 size={16} className="animate-spin" /> Loading analytics…
           </div>
         ) : !data ? (
-          <div className="flex flex-col items-center justify-center gap-2 rounded-xl2 border border-mist-200 bg-white py-20 text-center shadow-panel">
-            <Inbox size={28} className="text-mist-300" />
-            <p className="text-sm font-medium text-ink-950">No analytics available</p>
+          <div className="flex flex-col items-center justify-center gap-2 rounded-xl2 border border-mist-200 bg-white py-20 text-center shadow-panel dark:border-white/10 dark:bg-ink-900">
+            <Inbox size={28} className="text-mist-300 dark:text-mist-500" />
+            <p className="text-sm font-medium text-ink-950 dark:text-white">No analytics available</p>
           </div>
         ) : (
           <>
@@ -241,34 +316,44 @@ export default function AnalyticsPage() {
               />
             </div>
 
-            {/* ---------- TREND ---------- */}
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <ChartCard
-                title="Revenue trend"
-                subtitle={`Grouped by ${filters.groupBy}`}
-                empty={trendDataset.length === 0}
+            {/* ---------- REVENUE HERO ---------- */}
+            <ChartCard
+              title="Revenue trend"
+              subtitle={`Grouped by ${filters.groupBy}`}
+              empty={trendDataset.length === 0}
+            >
+              <LineChart
+                dataset={trendDataset}
+                xAxis={[{ scaleType: "point", dataKey: "label" }]}
+                yAxis={[{ valueFormatter: (v) => formatCompactCurrency(v) }]}
+                series={[
+                  {
+                    id: "revenue",
+                    dataKey: "totalRevenue",
+                    label: "Revenue",
+                    color: "url(#revenueGradient)",
+                    area: true,
+                    showMark: trendDataset.length <= 20,
+                    curve: "monotoneX",
+                    valueFormatter: (v) => formatCurrency(v),
+                  },
+                ]}
+                height={isMobile ? 240 : 320}
+                margin={{ left: isMobile ? 40 : 64, right: isMobile ? 12 : 32, top: 16, bottom: 30 }}
+                grid={{ horizontal: true }}
+                hideLegend
               >
-                <LineChart
-                  dataset={trendDataset}
-                  xAxis={[{ scaleType: "point", dataKey: "label" }]}
-                  yAxis={[{ valueFormatter: (v) => formatCompactCurrency(v) }]}
-                  series={[
-                    {
-                      dataKey: "totalRevenue",
-                      label: "Revenue",
-                      color: CHART_PALETTE[0],
-                      area: true,
-                      showMark: false,
-                      valueFormatter: (v) => formatCurrency(v),
-                    },
-                  ]}
-                  height={280}
-                  margin={{ left: 64, right: 32, top: 16, bottom: 30 }}
-                  grid={{ horizontal: true }}
-                  hideLegend
-                />
-              </ChartCard>
+                <defs>
+                  <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={CHART_PALETTE[0]} stopOpacity={0.6} />
+                    <stop offset="100%" stopColor={CHART_PALETTE[0]} stopOpacity={0.03} />
+                  </linearGradient>
+                </defs>
+              </LineChart>
+            </ChartCard>
 
+            {/* ---------- ORDERS TREND + FULFILLMENT FUNNEL ---------- */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <ChartCard
                 title="Orders trend"
                 subtitle={`Grouped by ${filters.groupBy}`}
@@ -285,12 +370,20 @@ export default function AnalyticsPage() {
                       valueFormatter: (v) => `${v} order${v === 1 ? "" : "s"}`,
                     },
                   ]}
-                  height={280}
-                  margin={{ left: 50, right: 16, top: 16, bottom: 30 }}
+                  height={isMobile ? 220 : 280}
+                  margin={{ left: isMobile ? 36 : 50, right: 16, top: 16, bottom: 30 }}
                   grid={{ horizontal: true }}
                   hideLegend
                   borderRadius={4}
                 />
+              </ChartCard>
+
+              <ChartCard
+                title="Fulfillment funnel"
+                subtitle="Orders that reached at least this stage · excludes cancelled"
+                empty={!funnelHasData}
+              >
+                <FulfillmentFunnel stages={funnelStages} />
               </ChartCard>
             </div>
 
@@ -310,12 +403,11 @@ export default function AnalyticsPage() {
                       valueFormatter: (item) => `${item.value} order${item.value === 1 ? "" : "s"}`,
                     },
                   ]}
-                  height={280}
+                  height={isMobile ? 340 : 280}
                   slotProps={{
-                    legend: {
-                      direction: "vertical",
-                      position: { vertical: "middle", horizontal: "end" },
-                    },
+                    legend: isMobile
+                      ? { direction: "horizontal", position: { vertical: "bottom", horizontal: "center" } }
+                      : { direction: "vertical", position: { vertical: "middle", horizontal: "end" } },
                   }}
                   sx={{ "& .MuiChartsArcLabel-root": { fill: "#fff", fontSize: 11, fontWeight: 600 } }}
                 />
@@ -330,7 +422,7 @@ export default function AnalyticsPage() {
                       scaleType: "band",
                       dataKey: "paymentStatus",
                       valueFormatter: labelize,
-                      width: 110,
+                      width: isMobile ? 70 : 110,
                     },
                   ]}
                   xAxis={[{ label: "Orders" }]}
@@ -340,11 +432,11 @@ export default function AnalyticsPage() {
                       label: "Orders",
                       valueFormatter: (v) => `${v} order${v === 1 ? "" : "s"}`,
                       colorGetter: ({ dataIndex }) =>
-                        STATUS_COLORS[paymentStatusBars[dataIndex]?.paymentStatus] || "#667085",
+                        STATUS_COLORS[paymentStatusBars[dataIndex]?.paymentStatus] || "#6B6B6B",
                     },
                   ]}
                   height={280}
-                  margin={{ left: 100, right: 16, top: 16, bottom: 30 }}
+                  margin={{ left: isMobile ? 60 : 100, right: 16, top: 16, bottom: 30 }}
                   grid={{ vertical: true }}
                   hideLegend
                   borderRadius={4}
@@ -361,7 +453,7 @@ export default function AnalyticsPage() {
               <BarChart
                 layout="horizontal"
                 dataset={topProducts}
-                yAxis={[{ scaleType: "band", dataKey: "productName", width: 140 }]}
+                yAxis={[{ scaleType: "band", dataKey: "productName", width: isMobile ? 90 : 140 }]}
                 xAxis={[{ label: "Units sold" }]}
                 series={[
                   {
@@ -371,13 +463,72 @@ export default function AnalyticsPage() {
                     valueFormatter: (v) => `${v} unit${v === 1 ? "" : "s"}`,
                   },
                 ]}
-                height={Math.max(220, topProducts.length * 42)}
-                margin={{ left: 130, right: 16, top: 16, bottom: 30 }}
+                height={Math.max(200, topProducts.length * (isMobile ? 34 : 42))}
+                margin={{ left: isMobile ? 80 : 130, right: 16, top: 16, bottom: 30 }}
                 grid={{ vertical: true }}
                 hideLegend
                 borderRadius={4}
               />
             </ChartCard>
+
+            {/* ---------- PRODUCT PROFILE (RADAR) + REVENUE VS ORDERS (SCATTER) ---------- */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <ChartCard
+                title="Top product profile"
+                subtitle="Units sold, revenue and orders — each on its own scale"
+                empty={radarProducts.length === 0}
+              >
+                <RadarChart
+                  height={isMobile ? 260 : 320}
+                  radar={{
+                    metrics: [
+                      { name: RADAR_METRICS[0], max: radarMax.units },
+                      { name: RADAR_METRICS[1], max: radarMax.revenue },
+                      { name: RADAR_METRICS[2], max: radarMax.orders },
+                    ],
+                  }}
+                  series={radarProducts.map((p, i) => ({
+                    id: p.productName,
+                    label: p.productName,
+                    data: [p.totalQuantitySold, p.totalRevenue, p.totalOrders],
+                    color: CHART_PALETTE[i % CHART_PALETTE.length],
+                    fillArea: true,
+                    valueFormatter: (v, ctx) =>
+                      ctx.dataIndex === 1 ? formatCurrency(v) : `${v}`,
+                  }))}
+                  slotProps={{
+                    legend: {
+                      direction: "horizontal",
+                      position: { vertical: "bottom", horizontal: "center" },
+                    },
+                  }}
+                />
+              </ChartCard>
+
+              <ChartCard
+                title="Revenue vs. orders"
+                subtitle={`Each point is one ${filters.groupBy === "month" ? "month" : "day"} in range`}
+                empty={scatterPoints.length === 0}
+              >
+                <ScatterChart
+                  series={[
+                    {
+                      label: "Daily performance",
+                      data: scatterPoints,
+                      color: CHART_PALETTE[0],
+                      markerSize: 7,
+                      valueFormatter: (v) => `${v.x} orders · ${formatCurrency(v.y)}`,
+                    },
+                  ]}
+                  xAxis={[{ label: "Orders", min: 0 }]}
+                  yAxis={[{ label: "Revenue", valueFormatter: (v) => formatCompactCurrency(v) }]}
+                  height={isMobile ? 260 : 320}
+                  margin={{ left: isMobile ? 44 : 64, right: 24, top: 16, bottom: 40 }}
+                  grid={{ horizontal: true, vertical: true }}
+                  hideLegend
+                />
+              </ChartCard>
+            </div>
 
             {/* ---------- SALES BY LOCATION ---------- */}
             <ChartCard
@@ -402,7 +553,7 @@ export default function AnalyticsPage() {
               <BarChart
                 layout="horizontal"
                 dataset={locationRows}
-                yAxis={[{ scaleType: "band", dataKey: "name", width: 110 }]}
+                yAxis={[{ scaleType: "band", dataKey: "name", width: isMobile ? 70 : 110 }]}
                 xAxis={[{ label: "Revenue", valueFormatter: (v) => formatCompactCurrency(v) }]}
                 series={[
                   {
@@ -412,8 +563,8 @@ export default function AnalyticsPage() {
                     valueFormatter: (v) => formatCurrency(v),
                   },
                 ]}
-                height={Math.max(220, locationRows.length * 42)}
-                margin={{ left: 100, right: 16, top: 16, bottom: 30 }}
+                height={Math.max(200, locationRows.length * (isMobile ? 34 : 42))}
+                margin={{ left: isMobile ? 60 : 100, right: 16, top: 16, bottom: 30 }}
                 grid={{ vertical: true }}
                 hideLegend
                 borderRadius={4}

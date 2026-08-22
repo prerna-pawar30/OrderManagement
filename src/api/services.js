@@ -78,6 +78,16 @@ export const ManualOrderService = {
     return response.data;
   },
 
+  updatePaymentStatus: async (orderId, { paymentStatus, paymentMethod, paymentReference }) => {
+    const response = await apiClient.patch(API_ROUTES.MANUAL_ORDER.PAYMENT_STATUS_UPDATE(orderId), {
+      permission: PERMISSIONS.ORDER_WRITE,
+      paymentStatus,
+      paymentMethod,
+      paymentReference,
+    });
+    return response.data;
+  },
+
   cancel: async (orderId, reason) => {
     const response = await apiClient.put(API_ROUTES.MANUAL_ORDER.CANCEL(orderId), {
       permission: PERMISSIONS.ORDER_WRITE,
@@ -122,62 +132,115 @@ export const ManualOrderService = {
     const response = await apiClient.get(API_ROUTES.MANUAL_ORDER.ANALYTICS(), { params });
     return response.data;
   },
-};
 
-// Builds the full invoice payload the API expects (billTo, per-item discount/GST,
-// summary, dates) out of a manual order, filling anything the order doesn't
-// track (discounts, GST, freight breakdown, terms) with neutral defaults.
-export const buildInvoicePayloadFromOrder = (order) => {
-  const addressParts = [
-    order.billingAddress?.street,
-    order.billingAddress?.area,
-    order.billingAddress?.city,
-    order.billingAddress?.state,
-    order.billingAddress?.pincode,
-    order.billingAddress?.country,
-  ].filter(Boolean);
+  // Per-customer returns & balance ledger — who the company owes a refund
+  // to, and who still owes the company money.
+  getCustomerLedger: async ({ startDate, endDate, search, balanceStatus, sortBy } = {}) => {
+    const params = {};
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+    if (search) params.search = search;
+    if (balanceStatus) params.balanceStatus = balanceStatus;
+    if (sortBy) params.sortBy = sortBy;
 
-  const today = new Date();
-  const dueDate = new Date(today.getTime() + 10 * 86400000);
-
-  return {
-    permission: PERMISSIONS.INVOICE_WRITE,
-    orderId: order.orderId,
-    orderRef: order._id,
-    status: order.paymentStatus === "paid" ? "paid" : "issued",
-    paymentTerms: "Payable due amount in 10 days",
-    termsOfDelivery: "",
-    shippingCondition: "Normal",
-    customerServiceRep: "",
-    invoiceDate: today.toISOString(),
-    dueDate: dueDate.toISOString(),
-    deliveryDate: null,
-    billTo: {
-      companyName: order.organizationName || order.customerName,
-      contactPerson: order.customerName,
-      contactNumber: order.customerPhone,
-      address: addressParts.join(", "),
-      gstin: order.gstNumber || "",
-    },
-    items: (order.items || []).map((i) => ({
-      description: i.variantName ? `${i.productName} - ${i.variantName}` : i.productName,
-      qty: i.quantity,
-      price: i.price,
-      discountPercent: 0,
-      discountValue: 0,
-      gstType: "IGST",
-      gstPercent: 0,
-    })),
-    summary: {
-      freightCost: order.shippingCharge || 0,
-      paidAmount: order.paymentStatus === "paid" ? order.grandTotal || 0 : 0,
-    },
-  };
-};
-
-export const InvoiceService = {
-  create: async (payload) => {
-    const response = await apiClient.post(API_ROUTES.INVOICE.CREATE, payload);
+    const response = await apiClient.get(API_ROUTES.MANUAL_ORDER.CUSTOMER_LEDGER(), { params });
     return response.data;
+  },
+
+  // "Customer said they'll take it next time" (or a straight cash/UPI/bank
+  // payout) — marks an order's pending refund as settled once it's
+  // actually been paid back or applied as credit on a new order.
+  settleCredit: async (orderId, { amount, method, reference, appliedToOrderId, notes } = {}) => {
+    const response = await apiClient.put(API_ROUTES.MANUAL_ORDER.CREDIT_SETTLE(orderId), {
+      permission: PERMISSIONS.ORDER_WRITE,
+      amount,
+      method,
+      reference,
+      appliedToOrderId,
+      notes,
+    });
+    return response.data;
+  },
+
+  // Every credit note ever issued (method: "credit_note" entries across all
+  // orders' refundHistory) — powers the dedicated Credit Notes page.
+  getCreditNotes: async ({ search, startDate, endDate } = {}) => {
+    const params = {};
+    if (search) params.search = search;
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+
+    const response = await apiClient.get(API_ROUTES.MANUAL_ORDER.CREDIT_NOTES(), { params });
+    return response.data;
+  },
+};
+
+// Invoices come from your existing real invoice backend — nothing there was
+// touched. This service just calls it directly from the frontend at the
+// right moments (order create, return).
+export const InvoiceService = {
+  createInvoice: async (payload) => {
+    const response = await apiClient.post(API_ROUTES.INVOICE.CREATE, {
+      permission: PERMISSIONS.INVOICE_CREATE,
+      ...payload,
+    });
+    return response.data;
+  },
+
+  updateInvoice: async (invoiceId, data) => {
+    const response = await apiClient.put(API_ROUTES.INVOICE.UPDATE(invoiceId), {
+      permission: PERMISSIONS.INVOICE_UPDATE,
+      ...data,
+    });
+    return response.data;
+  },
+
+  deleteInvoice: async (invoiceId) => {
+    const response = await apiClient.delete(API_ROUTES.INVOICE.DELETE(invoiceId), {
+      data: { permission: PERMISSIONS.INVOICE_UPDATE },
+    });
+    return response.data;
+  },
+
+  getInvoiceById: async (invoiceId) => {
+    const res = await apiClient.get(API_ROUTES.INVOICE.GET_BY_ID(invoiceId));
+    return res.data?.data || res.data;
+  },
+
+  getAllInvoices: async (page = 1, limit = 12) => {
+    const res = await apiClient.get(API_ROUTES.INVOICE.GET_ALL(undefined, page, limit));
+    const data = res.data?.data;
+    return {
+      invoices: data?.invoices || [],
+      pagination: data?.pagination || { totalPages: 1, totalItems: data?.invoices?.length || 0, currentPage: page },
+    };
+  },
+
+  getInvoicesByMonthYear: async (month, year, limit = 500) => {
+    const res = await apiClient.get(API_ROUTES.INVOICE.GET_BY_MONTH_YEAR(), {
+      params: { month, year, limit },
+    });
+    const data = res.data?.data;
+    return data?.invoices || data || [];
+  },
+
+  getCustomers: async () => {
+    try {
+      const res = await apiClient.get(API_ROUTES.INVOICE.GET_CUSTOMERS);
+      return res.data?.data || [];
+    } catch (error) {
+      console.error("InvoiceService Fetch Customers Error:", error);
+      return [];
+    }
+  },
+
+  getCustomerInvoicesById: async (customerNo) => {
+    try {
+      const res = await apiClient.get(API_ROUTES.INVOICE.GET_CUSTOMER_INVOICES_BY_ID(customerNo));
+      return res.data?.data || [];
+    } catch (error) {
+      console.error("InvoiceService Fetch Customer Invoices Error:", error);
+      return [];
+    }
   },
 };
