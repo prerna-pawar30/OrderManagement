@@ -246,7 +246,7 @@ const CustomerGroupItem = ({
   return (
     <div className="overflow-hidden rounded-2xl border border-orange-100 bg-white shadow-sm transition-shadow hover:shadow-md">
       {/* Header Row */}
-      <div className="flex flex-col gap-3 p-4 transition-colors hover:bg-orange-50/40 sm:flex-row sm:items-center sm:justify-between md:p-5">
+      <div className="p-4 transition-colors hover:bg-orange-50/40 sm:flex sm:items-center sm:justify-between sm:gap-3 md:p-5">
         {/* Clickable Area for Expansion */}
         <div
           onClick={() => toggleUser(groupKey)}
@@ -255,25 +255,51 @@ const CustomerGroupItem = ({
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-orange-100 text-orange-600 sm:h-12 sm:w-12">
             <User size={22} />
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h3
               onClick={customerPhone ? openCustomerProfile : undefined}
               title={customerPhone ? "Open customer profile" : undefined}
-              className={`truncate font-bold text-gray-800 md:text-lg ${
+              className={`truncate text-base font-bold text-gray-800 md:text-lg ${
                 customerPhone ? "hover:text-orange-600 hover:underline" : ""
               }`}
             >
               {user.customerName}
             </h3>
-            <p className="truncate text-xs font-medium uppercase tracking-wider text-gray-400">
-              {user.contactPerson} • {user.invoiceCount} {user.invoiceCount === 1 ? "Invoice" : "Invoices"}
-              <span className="text-orange-500 sm:hidden"> • ₹{user.totalAmount.toLocaleString("en-IN")}</span>
+            <p className="truncate text-xs font-medium text-gray-500 sm:uppercase sm:tracking-wider sm:text-gray-400">
+              {user.contactPerson}
+              <span className="hidden sm:inline">
+                {" "}• {user.invoiceCount} {user.invoiceCount === 1 ? "Invoice" : "Invoices"}
+              </span>
+            </p>
+          </div>
+          {/* Phone: expand chevron sits next to the name */}
+          <div className="shrink-0 rounded-full p-1 text-orange-400 sm:hidden">
+            {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+          </div>
+        </div>
+
+        {/* Phone: labelled stats, so "what is this number" is never a guess */}
+        <div
+          onClick={() => toggleUser(groupKey)}
+          className="mt-3 grid cursor-pointer grid-cols-2 gap-2 sm:hidden"
+        >
+          <div className="rounded-xl bg-orange-50/70 px-3 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Total billing</p>
+            <p className="text-sm font-bold text-gray-800">₹{user.totalAmount.toLocaleString("en-IN")}</p>
+          </div>
+          <div className="rounded-xl bg-orange-50/70 px-3 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Invoices</p>
+            <p className="text-sm font-bold text-gray-800">
+              {user.invoiceCount}{" "}
+              <span className="text-xs font-medium text-orange-600">
+                {isExpanded ? "· Hide" : "· Tap to view"}
+              </span>
             </p>
           </div>
         </div>
 
         {/* Stats and Action Buttons */}
-        <div className="flex shrink-0 items-center justify-between gap-3 sm:justify-end sm:gap-6 md:gap-8">
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:mt-0 sm:flex sm:shrink-0 sm:items-center sm:justify-end sm:gap-6 md:gap-8">
           {/* Total Billing Info */}
           <div className="hidden text-right sm:block">
             <p className="text-xs text-gray-400">Total Billing</p>
@@ -286,10 +312,11 @@ const CustomerGroupItem = ({
               e.stopPropagation();
               handleCreateInvoice(user);
             }}
-            className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-600 transition-all hover:bg-emerald-100"
+            className="flex items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-bold text-emerald-600 transition-all hover:bg-emerald-100 sm:py-2"
             title="Create New Invoice"
           >
-            <PlusCircle size={16} />
+            <PlusCircle size={16} className="shrink-0" />
+            <span className="sm:hidden">New Invoice</span>
             <span className="hidden sm:inline">Create Invoice</span>
           </button>
 
@@ -299,15 +326,15 @@ const CustomerGroupItem = ({
               e.stopPropagation();
               handleDownloadCustomerReport(user);
             }}
-            className="flex items-center gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-bold text-orange-600 transition-all hover:bg-orange-100"
+            className="flex items-center justify-center gap-2 whitespace-nowrap rounded-lg border border-orange-200 bg-orange-50 px-3 py-2.5 text-xs font-bold text-orange-600 transition-all hover:bg-orange-100 sm:py-2"
             title="Download Customer Statement"
           >
-            <Download size={16} />
-            <span className="hidden sm:inline">Statement</span>
+            <Download size={16} className="shrink-0" />
+            <span>Statement</span>
           </button>
 
           {/* Toggle Icon */}
-          <div onClick={() => toggleUser(groupKey)} className="cursor-pointer rounded-full p-1 text-orange-400 hover:bg-orange-50 hover:text-orange-500">
+          <div onClick={() => toggleUser(groupKey)} className="hidden cursor-pointer rounded-full p-1 text-orange-400 hover:bg-orange-50 hover:text-orange-500 sm:block">
             {isExpanded ? <ChevronDown /> : <ChevronRight />}
           </div>
         </div>

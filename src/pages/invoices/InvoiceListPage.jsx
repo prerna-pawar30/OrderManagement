@@ -1572,11 +1572,11 @@ const handleDownloadCustomerReport = async (user) => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-50/50 via-white to-white p-4 md:p-8">
+    <div className="min-h-screen bg-gradient-to-b from-orange-50/50 via-white to-white sm:p-4 md:p-8">
       <div className="mx-auto max-w-7xl">
 
         {/* ── Header ── */}
-        <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="mb-5 flex flex-col gap-4 md:mb-6 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-orange-500 text-white shadow-md shadow-orange-500/20">
               <Receipt size={22} />
@@ -1593,7 +1593,7 @@ const handleDownloadCustomerReport = async (user) => {
           </div>
 
           {/* Action Buttons */}
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="grid grid-cols-2 gap-2.5 sm:flex sm:items-center sm:gap-3">
             {/* ── Excel Export ── */}
             <MonthYearExcelExport
               fetchInvoices={InvoiceService.getInvoicesByMonthYear}
@@ -1602,12 +1602,13 @@ const handleDownloadCustomerReport = async (user) => {
             {/* ── Create Invoice ── */}
             <button
               onClick={() => navigate("/invoices/create")}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-orange-500 px-6 py-2.5
-                         font-semibold text-white shadow-lg shadow-orange-500/20 transition-all
-                         hover:bg-orange-600 active:scale-95 sm:flex-initial"
+              className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-orange-500 px-3 py-2.5
+                         text-sm font-semibold text-white shadow-lg shadow-orange-500/20 transition-all
+                         hover:bg-orange-600 active:scale-95 sm:flex-initial sm:px-6 sm:text-base"
             >
-              <Plus size={20} />
-              Create New Invoice
+              <Plus size={18} className="shrink-0" />
+              <span className="sm:hidden">New Invoice</span>
+              <span className="hidden sm:inline">Create New Invoice</span>
             </button>
           </div>
         </div>

@@ -193,18 +193,17 @@ export default function OrdersListPage() {
           </div>
         ) : (
           <>
-            {/* Table — comfortable screens only, no side-scrolling needed */}
-            <div className="hidden overflow-x-auto lg:block">
+            {/* Table — wide screens only (xl+), where every column fits without overlap */}
+            <div className="hidden overflow-x-auto xl:block">
               <table className="w-full table-fixed text-left text-sm">
                 <colgroup>
-                  <col className="w-[20%]" />
+                  <col className="w-[21%]" />
                   <col className="w-[16%]" />
-                  <col className="w-[8%]" />
+                  <col className="w-[9%]" />
                   <col className="w-[10%]" />
-                  <col className="w-[16%]" />
+                  <col className="w-[17%]" />
+                  <col className="w-[17%]" />
                   <col className="w-[10%]" />
-                  <col className="w-[8%]" />
-                  <col className="w-[12%]" />
                 </colgroup>
                 <thead>
                   <tr className="border-b border-mist-100 text-xs uppercase tracking-wide text-mist-500 dark:border-white/10 dark:text-mist-300">
@@ -214,7 +213,6 @@ export default function OrdersListPage() {
                     <th className="px-4 py-3 font-semibold">Total</th>
                     <th className="px-4 py-3 font-semibold">Payment</th>
                     <th className="px-4 py-3 font-semibold">Status</th>
-                    <th className="px-4 py-3 font-semibold">Actions</th>
                     <th className="px-4 py-3 font-semibold">Updated</th>
                   </tr>
                 </thead>
@@ -290,21 +288,21 @@ export default function OrdersListPage() {
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3">
-                          <OrderStatusBadge status={order.orderStatus} />
-                        </td>
                         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                          <div className="grid h-8 w-8 shrink-0 place-items-center">
-                            {updatingOrderId === order._id ? (
-                              <Loader2 size={14} className="animate-spin text-mist-400 dark:text-mist-500" />
-                            ) : (
-                              <StatusActionMenu
-                                nextStatuses={STATUS_FLOW[order.orderStatus] || []}
-                                canCancel={!NON_CANCELLABLE.includes(order.orderStatus)}
-                                onSelectStatus={(s) => handleStatusChange(order, s)}
-                                onCancel={() => setCancelModalOrder(order)}
-                              />
-                            )}
+                          <div className="flex items-center gap-1.5">
+                            <OrderStatusBadge status={order.orderStatus} />
+                            <div className="grid h-8 w-8 shrink-0 place-items-center">
+                              {updatingOrderId === order._id ? (
+                                <Loader2 size={14} className="animate-spin text-mist-400 dark:text-mist-500" />
+                              ) : (
+                                <StatusActionMenu
+                                  nextStatuses={STATUS_FLOW[order.orderStatus] || []}
+                                  canCancel={!NON_CANCELLABLE.includes(order.orderStatus)}
+                                  onSelectStatus={(s) => handleStatusChange(order, s)}
+                                  onCancel={() => setCancelModalOrder(order)}
+                                />
+                              )}
+                            </div>
                           </div>
                         </td>
                         <td className="px-4 py-3 text-xs text-mist-500 dark:text-mist-300">
@@ -318,14 +316,14 @@ export default function OrdersListPage() {
             </div>
 
             {/* Cards — phones/tablets, no horizontal scrolling at all */}
-            <div className="divide-y divide-mist-100 dark:divide-white/10 lg:hidden">
+            <div className="divide-y divide-mist-100 dark:divide-white/10 md:grid md:grid-cols-2 md:gap-px md:divide-y-0 md:bg-mist-100 md:dark:bg-white/10 xl:hidden">
               {filtered.map((order) => {
                 const staffName = createdByName(order);
                 return (
                 <div
                   key={order._id}
                   onClick={() => setActiveOrder(order)}
-                  className="cursor-pointer p-4 hover:bg-mist-50 dark:hover:bg-white/5"
+                  className="cursor-pointer bg-white p-4 hover:bg-mist-50 dark:bg-ink-900 dark:hover:bg-ink-800"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-2.5">
@@ -359,52 +357,68 @@ export default function OrdersListPage() {
                     {staffName && <> · by {staffName}</>}
                   </p>
 
-                  <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                    <OrderStatusBadge status={order.orderStatus} />
-                    <PaymentStatusBadge status={order.paymentStatus} />
-                  </div>
-
+                  {/* Labelled dropdowns — tap the current value to change it */}
                   <div
-                    className="mt-3 flex flex-wrap items-center gap-2 border-t border-mist-100 pt-3 dark:border-white/10"
+                    className="mt-3 grid grid-cols-2 gap-2.5 border-t border-mist-100 pt-3 dark:border-white/10"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    {["refund_pending", "partial_refunded"].includes(order.paymentStatus) && (
-                      <button
-                        onClick={() => setSettleRefundOrder(order)}
-                        className="rounded-full border border-amber-400 px-2.5 py-1 text-[11px] font-semibold text-amber-500 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-500/10"
-                      >
-                        Settle refund
-                      </button>
-                    )}
-                    {updatingOrderId === order._id || updatingPaymentId === order._id ? (
-                      <Loader2 size={14} className="animate-spin text-mist-400 dark:text-mist-500" />
-                    ) : (
-                      <>
+                    <div className="min-w-0">
+                      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-mist-500 dark:text-mist-300">
+                        Payment
+                      </p>
+                      {updatingPaymentId === order._id ? (
+                        <div className="flex min-h-[40px] items-center px-2.5">
+                          <Loader2 size={16} className="animate-spin text-mist-400 dark:text-mist-500" />
+                        </div>
+                      ) : (
+                        <PaymentActionMenu
+                          variant="pill"
+                          currentStatus={order.paymentStatus}
+                          onSelect={(s) => handlePaymentChange(order, s)}
+                        />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-mist-500 dark:text-mist-300">
+                        Order status
+                      </p>
+                      {updatingOrderId === order._id ? (
+                        <div className="flex min-h-[40px] items-center px-2.5">
+                          <Loader2 size={16} className="animate-spin text-mist-400 dark:text-mist-500" />
+                        </div>
+                      ) : (
                         <StatusActionMenu
+                          variant="pill"
+                          currentStatus={order.orderStatus}
                           nextStatuses={STATUS_FLOW[order.orderStatus] || []}
                           canCancel={!NON_CANCELLABLE.includes(order.orderStatus)}
                           onSelectStatus={(s) => handleStatusChange(order, s)}
                           onCancel={() => setCancelModalOrder(order)}
                         />
-                        {!["refund_pending", "partial_refunded"].includes(order.paymentStatus) && (
-                          <PaymentActionMenu
-                            currentStatus={order.paymentStatus}
-                            onSelect={(s) => handlePaymentChange(order, s)}
-                          />
-                        )}
-                      </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-2.5 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                    {["refund_pending", "partial_refunded"].includes(order.paymentStatus) && (
+                      <button
+                        onClick={() => setSettleRefundOrder(order)}
+                        className="flex h-9 items-center rounded-lg border border-amber-400 px-3 text-xs font-semibold text-amber-500 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-500/10"
+                      >
+                        Settle refund
+                      </button>
                     )}
                     <button
                       onClick={() => downloadInvoice(order)}
                       disabled={downloadingInvoiceId === order._id}
-                      title="Download invoice"
-                      className="ml-auto grid h-8 w-8 place-items-center rounded-lg border border-mist-200 text-mist-500 hover:bg-mist-50 disabled:opacity-50 dark:border-white/10 dark:text-mist-300 dark:hover:bg-white/5"
+                      className="ml-auto flex h-9 items-center gap-1.5 rounded-lg border border-mist-200 px-3 text-xs font-medium text-mist-700 hover:bg-mist-50 disabled:opacity-50 dark:border-white/10 dark:text-mist-300 dark:hover:bg-white/5"
                     >
                       {downloadingInvoiceId === order._id ? (
                         <Loader2 size={14} className="animate-spin" />
                       ) : (
                         <FileDown size={14} />
                       )}
+                      Invoice
                     </button>
                   </div>
                 </div>

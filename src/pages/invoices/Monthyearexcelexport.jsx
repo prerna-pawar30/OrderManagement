@@ -603,17 +603,17 @@ const MonthYearExcelExport = ({ fetchInvoices }) => {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-orange-200 bg-white
-                   px-5 py-2.5 font-semibold text-orange-600 shadow-sm transition-all
-                   hover:bg-orange-50 active:scale-95 sm:flex-initial"
+        className="flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-orange-200 bg-white
+                   px-3 py-2.5 text-sm font-semibold text-orange-600 shadow-sm transition-all
+                   hover:bg-orange-50 active:scale-95 sm:flex-initial sm:px-5 sm:text-base"
       >
-        <FileSpreadsheet size={20} />
+        <FileSpreadsheet size={18} className="shrink-0" />
         Export Excel
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-[400px] overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[400px] overflow-hidden">
 
             {/* Modal Header */}
             <div className="bg-gradient-to-r from-[#1A1A2E] to-[#E68736] px-6 py-5 flex items-center justify-between">
