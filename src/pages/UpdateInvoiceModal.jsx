@@ -50,6 +50,30 @@ const UpdateInvoiceModal = ({ invoice, onClose, onRefresh }) => {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // The backend derives the invoice's real payment state from Amount Paid
+  // vs. the grand total, not from the Status dropdown alone — so picking
+  // "Paid" here without Amount Paid actually covering the total gets
+  // silently overridden back by the server. Keep them in sync from this
+  // side so "Paid" always sticks.
+  const grandTotal = Math.max(
+    formData.items.reduce(
+      (sum, it) => sum + (Number(it.qty) || 0) * (Number(it.price) || 0) - (Number(it.discountValue) || 0),
+      0
+    ) + (Number(formData.summary.freightCost) || 0),
+    0
+  );
+
+  const handleStatusChange = (newStatus) => {
+    setFormData((prev) => ({
+      ...prev,
+      status: newStatus,
+      summary:
+        newStatus === "paid"
+          ? { ...prev.summary, paidAmount: String(grandTotal) }
+          : prev.summary,
+    }));
+  };
+
   // --- Utility functions to protect values from scroll logic distortions ---
   const cleanNumericInput = (val) => {
     return val.replace(/[^0-9.]/g, '');
@@ -342,7 +366,7 @@ const UpdateInvoiceModal = ({ invoice, onClose, onRefresh }) => {
                     { value: "partially_paid", label: "Partially Paid" },
                     { value: "cancelled", label: "Cancelled" }
                   ]}
-                  onChange={(v) => setFormData({ ...formData, status: v })}
+                  onChange={handleStatusChange}
                 />
               </div>
             </div>
@@ -510,6 +534,18 @@ const UpdateInvoiceModal = ({ invoice, onClose, onRefresh }) => {
                     onChange={(e) => handleSummaryChange("paidAmount", e.target.value)}
                   />
                 </div>
+                <div className="flex justify-between items-center gap-4 text-xs text-slate-500">
+                  <span>Grand total</span>
+                  <span className="font-semibold text-slate-700">₹{grandTotal.toLocaleString("en-IN")}</span>
+                </div>
+                {(Number(formData.summary.paidAmount) || 0) < grandTotal && (
+                  <div className="flex justify-between items-center gap-4 text-xs text-amber-600">
+                    <span>Still due</span>
+                    <span className="font-semibold">
+                      ₹{(grandTotal - (Number(formData.summary.paidAmount) || 0)).toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </section>

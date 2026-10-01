@@ -14,6 +14,8 @@ const ORDER_STATUS_STYLES = {
 const PAYMENT_STATUS_STYLES = {
   pending: "bg-amber-100 text-amber-500 dark:bg-amber-500/15 dark:text-amber-400",
   paid: "bg-mint-100 text-mint-500 dark:bg-mint-500/15 dark:text-mint-400",
+  partially_paid: "bg-amber-100 text-amber-500 dark:bg-amber-500/15 dark:text-amber-400",
+  unpaid: "bg-coral-100 text-coral-500 dark:bg-coral-500/15 dark:text-coral-400",
   refunded: "bg-coral-100 text-coral-500 dark:bg-coral-500/15 dark:text-coral-400",
   refund_pending: "bg-amber-100 text-amber-500 dark:bg-amber-500/15 dark:text-amber-400",
   partial_refunded: "bg-amber-100 text-amber-500 dark:bg-amber-500/15 dark:text-amber-400",

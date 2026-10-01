@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import Header from "./Header";
 
@@ -15,15 +15,16 @@ export default function DashboardLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem("digident-sidebar-collapsed") === "true"
   );
+  const { pathname } = useLocation();
   const title =
-    TITLES[window.location.pathname] ||
-    (window.location.pathname.startsWith("/orders")
+    TITLES[pathname] ||
+    (pathname.startsWith("/orders")
       ? "Orders"
-      : window.location.pathname.startsWith("/customers/")
+      : pathname.startsWith("/customers/")
       ? "Customer profile"
-      : window.location.pathname === "/customer-ledger"
+      : pathname === "/customer-ledger"
       ? "Customer ledger"
-      : window.location.pathname === "/credit-notes"
+      : pathname === "/credit-notes"
       ? "Credit notes"
       : "Digident");
 

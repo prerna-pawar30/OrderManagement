@@ -1,44 +1,44 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { Search, Loader2, Inbox, Wallet, HandCoins, ScrollText } from "lucide-react";
 import toast from "react-hot-toast";
-import { ManualOrderService } from "../api/services";
+import { InvoiceService } from "../api/services";
+import { fetchAllInvoices, buildInvoiceLedger } from "../lib/invoiceCustomers";
 import { BalanceStatusBadge } from "../components/StatusBadge";
+import CustomerLedgerDrawer from "../components/CustomerLedgerDrawer";
 import { formatCurrency, formatDateTime, initials } from "../lib/format";
 
 const STATUS_FILTERS = [
-  { value: "", label: "Pending only (default)" },
+  { value: "", label: "All customers" },
+  { value: "__pending__", label: "Pending only" },
   { value: "customer_owes", label: "Customer owes us" },
   { value: "company_owes", label: "We owe customer" },
   { value: "settled", label: "Settled" },
-  { value: "__all__", label: "All customers (incl. settled)" },
 ];
 
 export default function CustomerLedgerPage() {
-  const navigate = useNavigate();
   const [customers, setCustomers] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
-  // Full customer profile (products bought, invoices, credit notes, balance)
-  // lives on its own page now — clicking a row takes you there.
-  const openCustomer = (c) =>
-    navigate(`/customers/${encodeURIComponent(c.customerPhone)}?name=${encodeURIComponent(c.customerName || "")}`);
+  // Clicking a row opens the ledger card for that customer (totals + invoices).
+  const [activeCustomer, setActiveCustomer] = useState(null);
+  const openCustomer = (c) => setActiveCustomer(c);
 
+  // Ledger is worked out from invoices (lib/invoiceCustomers.js) — the old
+  // /manual-order/ledger endpoint only counted manual orders, so directly
+  // created invoices never showed up. Status filter + search are client-side.
   const load = async () => {
     setLoading(true);
     try {
-      // "" (default) and "__all__" both fetch everything from the backend —
-      // the difference between them is applied client-side below, so a
-      // customer who just got settled doesn't need a fresh network request
-      // to disappear from the default view.
-      const res = await ManualOrderService.getCustomerLedger({
-        balanceStatus: statusFilter === "__all__" ? undefined : statusFilter || undefined,
-      });
-      setCustomers(res?.data?.customers || []);
-      setSummary(res?.data?.summary || null);
+      const [invoices, customerList] = await Promise.all([
+        fetchAllInvoices(InvoiceService.getAllInvoices),
+        InvoiceService.getCustomers(),
+      ]);
+      const ledger = buildInvoiceLedger(invoices, customerList);
+      setCustomers(ledger.customers);
+      setSummary(ledger.summary);
     } catch (err) {
       toast.error(err?.response?.data?.message || "Could not load the customer ledger");
     } finally {
@@ -49,22 +49,26 @@ export default function CustomerLedgerPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter]);
+  }, []);
 
   const filtered = useMemo(() => {
-    // Default view: hide settled (₹0 balance) customers — only show
-    // customers where either side still owes money. Explicit filter
-    // selections (including "All customers") bypass this.
+    // "Pending only" hides settled (₹0 balance) customers — only show
+    // customers where either side still owes money.
     let list =
-      statusFilter === "" ? customers.filter((c) => c.balanceStatus !== "settled") : customers;
+      statusFilter === "__pending__"
+        ? customers.filter((c) => c.balanceStatus !== "settled")
+        : statusFilter
+        ? customers.filter((c) => c.balanceStatus === statusFilter)
+        : customers;
 
     if (query.trim()) {
       const q = query.trim().toLowerCase();
+      const digits = q.replace(/\D/g, "");
       list = list.filter(
         (c) =>
           c.customerName?.toLowerCase().includes(q) ||
-          c.customerPhone?.includes(q) ||
-          c.customerEmail?.toLowerCase().includes(q)
+          c.contactPerson?.toLowerCase().includes(q) ||
+          (digits && String(c.customerPhone || "").replace(/\D/g, "").includes(digits))
       );
     }
     return list;
@@ -118,7 +122,7 @@ export default function CustomerLedgerPage() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search customer, phone, email…"
+            placeholder="Search customer, contact person, phone…"
             className="w-full rounded-lg border border-mist-200 bg-white py-2.5 pl-9 pr-3 text-sm text-ink-950 outline-none focus:border-orange-500 dark:border-ink-700 dark:bg-ink-900 dark:text-white dark:placeholder:text-mist-500"
           />
         </div>
@@ -164,7 +168,7 @@ export default function CustomerLedgerPage() {
                 <tbody>
                   {filtered.map((c) => (
                     <tr
-                      key={`${c.customerPhone}-${c.customerName}`}
+                      key={c.groupKey}
                       onClick={() => openCustomer(c)}
                       className="cursor-pointer border-b border-mist-100 align-top last:border-0 hover:bg-mist-50 dark:border-white/10 dark:hover:bg-white/5"
                     >
@@ -215,7 +219,7 @@ export default function CustomerLedgerPage() {
             <div className="divide-y divide-mist-100 dark:divide-white/10 lg:hidden">
               {filtered.map((c) => (
                 <div
-                  key={`${c.customerPhone}-${c.customerName}`}
+                  key={c.groupKey}
                   onClick={() => openCustomer(c)}
                   className="cursor-pointer p-4 hover:bg-mist-50 dark:hover:bg-white/5"
                 >
@@ -271,6 +275,10 @@ export default function CustomerLedgerPage() {
           </>
         )}
       </div>
+
+      {activeCustomer && (
+        <CustomerLedgerDrawer customer={activeCustomer} onClose={() => setActiveCustomer(null)} />
+      )}
     </div>
   );
 }
