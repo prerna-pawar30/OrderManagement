@@ -1,18 +1,31 @@
-import React, { useEffect, useMemo, useState } from "react";
+/**
+ * Table of manual orders with search, status / payment actions, courier, returns and invoice PDF;
+ * opens OrderDetailDrawer.
+ *
+ * Route: /orders
+ * Used by: routes/AppRoutes.jsx
+ * API: InvoiceService.getAllInvoices, InvoiceService.getInvoiceById, ManualOrderService.getAll,
+ * ManualOrderService.updatePaymentStatus, ManualOrderService.updateStatus
+ */
+
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, Plus, ChevronLeft, ChevronRight, Loader2, Inbox, FileDown } from "lucide-react";
 import toast from "react-hot-toast";
-import { ManualOrderService, InvoiceService } from "../api/services";
-import { OrderStatusBadge, PaymentStatusBadge, statusLabel } from "./../components/StatusBadge";
-import { formatCurrency, formatDateTime, initials } from "../lib/format";
-import { generateInvoicePdf } from "../lib/generateInvoicePdf";
-import OrderDetailDrawer from "../components/OrderDetailDrawer";
-import CourierAssignModal from "../components/CourierAssignModal";
-import CancelOrderModal from "../components/CancelOrderModal";
-import MarkPaidModal from "../components/MarkPaidModal";
-import SettleRefundModal from "../components/SettleRefundModal";
-import StatusActionMenu from "../components/StatusActionMenu";
-import PaymentActionMenu from "../components/PaymentActionMenu";
+import { ManualOrderService, InvoiceService } from "../backend/ApiService";
+import { OrderStatusBadge, PaymentStatusBadge, statusLabel } from "../components/order/StatusBadge";
+import { formatDateTime, initials } from "../utils/Format";
+import { generateInvoicePdf } from "../utils/InvoicePdf";
+import { fetchAllInvoices } from "../utils/InvoiceCustomers";
+import { withInvoicePayment } from "../utils/InvoiceHelpers";
+import OrderDetailDrawer from "../components/order/OrderDetailDrawer";
+import CourierAssignModal from "../components/order/CourierAssignModal";
+import CancelOrderModal from "../components/order/CancelOrderModal";
+import MarkPaidModal from "../components/invoice/MarkPaidModal";
+import SettleRefundModal from "../components/creditnote/SettleRefundModal";
+import StatusActionMenu from "../components/order/StatusActionMenu";
+import PaymentActionMenu from "../components/invoice/PaymentActionMenu";
+import { OrderTotal } from "../components/order/OrderTotal";
 
 // Mirrors the backend's statusFlow in manualOrder.service.js — only these
 // forward transitions succeed against PATCH /manual-order/status/:orderId.
@@ -43,14 +56,21 @@ const shortOrderId = (id) => {
 };
 
 const createdByName = (order) => {
-  const cb = order.createdBy;
-  if (!cb) return null;
-  return [cb.firstName, cb.lastName].filter(Boolean).join(" ").trim() || cb.email || null;
+  const callback = order.createdBy;
+  if (!callback) return null;
+  return (
+    [callback.firstName, callback.lastName].filter(Boolean).join(" ").trim() ||
+    callback.email ||
+    null
+  );
 };
 
 export default function OrdersListPage() {
   const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
+  // Invoices loaded with the list, reused by the drawer + Invoice download
+  // so they don't each fetch the same invoice again.
+  const [invoiceById, setInvoiceById] = useState(() => new Map());
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -78,7 +98,8 @@ export default function OrdersListPage() {
     }
     setDownloadingInvoiceId(order._id);
     try {
-      const invoice = await InvoiceService.getInvoiceById(invoiceId);
+      const invoice =
+        invoiceById.get(invoiceId) || (await InvoiceService.getInvoiceById(invoiceId));
       if (!invoice) {
         toast.error("No invoice found for this order yet");
         return;
@@ -94,9 +115,23 @@ export default function OrdersListPage() {
   const load = async (page = pagination.page) => {
     setLoading(true);
     try {
-      const res = await ManualOrderService.getAll({ page, limit: pagination.limit });
-      setOrders(res?.data?.orders || []);
-      setPagination((p) => ({ ...p, ...(res?.data?.pagination || {}), page }));
+      // Invoices too, so payments recorded on an order's invoice show here.
+      const [res, invoices] = await Promise.all([
+        ManualOrderService.getAll({ page, limit: pagination.limit }),
+        fetchAllInvoices(InvoiceService.getAllInvoices).catch(() => []),
+      ]);
+      const byId = new Map(invoices.map((invoice) => [invoice.invoiceId, invoice]));
+      setInvoiceById(byId);
+      setOrders(
+        (res?.data?.orders || []).map((order) =>
+          withInvoicePayment(order, byId.get(order.invoiceId))
+        )
+      );
+      setPagination((prevPagination) => ({
+        ...prevPagination,
+        ...(res?.data?.pagination || {}),
+        page,
+      }));
     } catch (err) {
       toast.error(err?.response?.data?.message || "Could not load orders");
     } finally {
@@ -150,13 +185,13 @@ export default function OrdersListPage() {
 
   const filtered = useMemo(() => {
     if (!query.trim()) return orders;
-    const q = query.trim().toLowerCase();
+    const searchText = query.trim().toLowerCase();
     return orders.filter(
-      (o) =>
-        o.customerName?.toLowerCase().includes(q) ||
-        o.customerPhone?.includes(q) ||
-        o.orderId?.toLowerCase().includes(q) ||
-        o.organizationName?.toLowerCase().includes(q)
+      (order) =>
+        order.customerName?.toLowerCase().includes(searchText) ||
+        order.customerPhone?.includes(searchText) ||
+        order.orderId?.toLowerCase().includes(searchText) ||
+        order.organizationName?.toLowerCase().includes(searchText)
     );
   }, [orders, query]);
 
@@ -164,10 +199,13 @@ export default function OrdersListPage() {
     <div>
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full sm:w-80">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-mist-400 dark:text-mist-500" />
+          <Search
+            size={16}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-mist-400 dark:text-mist-500"
+          />
           <input
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(event) => setQuery(event.target.value)}
             placeholder="Search client, phone, order ID…"
             className="w-full rounded-lg border border-mist-200 bg-white py-2.5 pl-9 pr-3 text-sm text-ink-950 outline-none focus:border-orange-500 dark:border-ink-700 dark:bg-ink-900 dark:text-white dark:placeholder:text-mist-500"
           />
@@ -188,8 +226,12 @@ export default function OrdersListPage() {
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
             <Inbox size={28} className="text-mist-300 dark:text-mist-500" />
-            <p className="text-sm font-medium text-ink-950 dark:text-white">No orders match here yet</p>
-            <p className="text-xs text-mist-500 dark:text-mist-300">Try a different search, or create a new order.</p>
+            <p className="text-sm font-medium text-ink-950 dark:text-white">
+              No orders match here yet
+            </p>
+            <p className="text-xs text-mist-500 dark:text-mist-300">
+              Try a different search, or create a new order.
+            </p>
           </div>
         ) : (
           <>
@@ -232,8 +274,8 @@ export default function OrdersListPage() {
                             </span>
                             <div className="min-w-0">
                               <p
-                                onClick={(e) => {
-                                  e.stopPropagation();
+                                onClick={(event) => {
+                                  event.stopPropagation();
                                   openCustomer(order);
                                 }}
                                 className="truncate font-medium text-ink-950 hover:underline dark:text-white"
@@ -252,7 +294,9 @@ export default function OrdersListPage() {
                               <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-mist-200 text-[10px] font-bold text-mist-700 dark:bg-white/10 dark:text-mist-200">
                                 {initials(staffName)}
                               </span>
-                              <span className="text-xs text-mist-700 dark:text-mist-300">{staffName}</span>
+                              <span className="text-xs text-mist-700 dark:text-mist-300">
+                                {staffName}
+                              </span>
                             </div>
                           ) : (
                             <span className="text-xs text-mist-400 dark:text-mist-500">—</span>
@@ -262,12 +306,14 @@ export default function OrdersListPage() {
                           {order.items?.length || 0} item{order.items?.length === 1 ? "" : "s"}
                         </td>
                         <td className="px-4 py-3 font-semibold text-ink-950 dark:text-white">
-                          {formatCurrency(order.grandTotal)}
+                          <OrderTotal order={order} />
                         </td>
-                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
                           <div className="flex items-center gap-1.5">
                             <PaymentStatusBadge status={order.paymentStatus} />
-                            {["refund_pending", "partial_refunded"].includes(order.paymentStatus) ? (
+                            {["refund_pending", "partial_refunded"].includes(
+                              order.paymentStatus
+                            ) ? (
                               <button
                                 onClick={() => setSettleRefundOrder(order)}
                                 className="shrink-0 rounded-full border border-amber-400 px-2.5 py-1 text-[11px] font-semibold text-amber-500 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-500/10"
@@ -277,28 +323,38 @@ export default function OrdersListPage() {
                             ) : (
                               <div className="grid h-8 w-8 shrink-0 place-items-center">
                                 {updatingPaymentId === order._id ? (
-                                  <Loader2 size={14} className="animate-spin text-mist-400 dark:text-mist-500" />
+                                  <Loader2
+                                    size={14}
+                                    className="animate-spin text-mist-400 dark:text-mist-500"
+                                  />
                                 ) : (
                                   <PaymentActionMenu
                                     currentStatus={order.paymentStatus}
-                                    onSelect={(s) => handlePaymentChange(order, s)}
+                                    onSelect={(paymentStatus) =>
+                                      handlePaymentChange(order, paymentStatus)
+                                    }
                                   />
                                 )}
                               </div>
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
                           <div className="flex items-center gap-1.5">
                             <OrderStatusBadge status={order.orderStatus} />
                             <div className="grid h-8 w-8 shrink-0 place-items-center">
                               {updatingOrderId === order._id ? (
-                                <Loader2 size={14} className="animate-spin text-mist-400 dark:text-mist-500" />
+                                <Loader2
+                                  size={14}
+                                  className="animate-spin text-mist-400 dark:text-mist-500"
+                                />
                               ) : (
                                 <StatusActionMenu
                                   nextStatuses={STATUS_FLOW[order.orderStatus] || []}
                                   canCancel={!NON_CANCELLABLE.includes(order.orderStatus)}
-                                  onSelectStatus={(s) => handleStatusChange(order, s)}
+                                  onSelectStatus={(orderStatus) =>
+                                    handleStatusChange(order, orderStatus)
+                                  }
                                   onCancel={() => setCancelModalOrder(order)}
                                 />
                               )}
@@ -320,108 +376,119 @@ export default function OrdersListPage() {
               {filtered.map((order) => {
                 const staffName = createdByName(order);
                 return (
-                <div
-                  key={order._id}
-                  onClick={() => setActiveOrder(order)}
-                  className="cursor-pointer bg-white p-4 hover:bg-mist-50 dark:bg-ink-900 dark:hover:bg-ink-800"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink-950 text-xs font-bold text-white">
-                        {initials(order.customerName)}
-                      </span>
-                      <div className="min-w-0">
-                        <p
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openCustomer(order);
-                          }}
-                          className="truncate font-medium text-ink-950 dark:text-white"
-                        >
-                          {order.customerName}
-                        </p>
-                        <p className="text-xs text-mist-500 dark:text-mist-300">{order.customerPhone}</p>
+                  <div
+                    key={order._id}
+                    onClick={() => setActiveOrder(order)}
+                    className="cursor-pointer bg-white p-4 hover:bg-mist-50 dark:bg-ink-900 dark:hover:bg-ink-800"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink-950 text-xs font-bold text-white">
+                          {initials(order.customerName)}
+                        </span>
+                        <div className="min-w-0">
+                          <p
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openCustomer(order);
+                            }}
+                            className="truncate font-medium text-ink-950 dark:text-white"
+                          >
+                            {order.customerName}
+                          </p>
+                          <p className="text-xs text-mist-500 dark:text-mist-300">
+                            {order.customerPhone}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-right font-semibold text-ink-950 dark:text-white">
+                        <OrderTotal order={order} />
                       </div>
                     </div>
-                    <p className="shrink-0 font-semibold text-ink-950 dark:text-white">
-                      {formatCurrency(order.grandTotal)}
+
+                    <p className="mt-2 truncate font-mono text-[11px] text-mist-500 dark:text-mist-300">
+                      {shortOrderId(order.orderId)}
                     </p>
-                  </div>
+                    <p className="text-xs text-mist-500 dark:text-mist-300">
+                      {order.items?.length || 0} item{order.items?.length === 1 ? "" : "s"} ·{" "}
+                      {formatDateTime(order.statusUpdatedAt || order.createdAt)}
+                      {staffName && <> · by {staffName}</>}
+                    </p>
 
-                  <p className="mt-2 truncate font-mono text-[11px] text-mist-500 dark:text-mist-300">
-                    {shortOrderId(order.orderId)}
-                  </p>
-                  <p className="text-xs text-mist-500 dark:text-mist-300">
-                    {order.items?.length || 0} item{order.items?.length === 1 ? "" : "s"} ·{" "}
-                    {formatDateTime(order.statusUpdatedAt || order.createdAt)}
-                    {staffName && <> · by {staffName}</>}
-                  </p>
-
-                  {/* Labelled dropdowns — tap the current value to change it */}
-                  <div
-                    className="mt-3 grid grid-cols-2 gap-2.5 border-t border-mist-100 pt-3 dark:border-white/10"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="min-w-0">
-                      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-mist-500 dark:text-mist-300">
-                        Payment
-                      </p>
-                      {updatingPaymentId === order._id ? (
-                        <div className="flex min-h-[40px] items-center px-2.5">
-                          <Loader2 size={16} className="animate-spin text-mist-400 dark:text-mist-500" />
-                        </div>
-                      ) : (
-                        <PaymentActionMenu
-                          variant="pill"
-                          currentStatus={order.paymentStatus}
-                          onSelect={(s) => handlePaymentChange(order, s)}
-                        />
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-mist-500 dark:text-mist-300">
-                        Order status
-                      </p>
-                      {updatingOrderId === order._id ? (
-                        <div className="flex min-h-[40px] items-center px-2.5">
-                          <Loader2 size={16} className="animate-spin text-mist-400 dark:text-mist-500" />
-                        </div>
-                      ) : (
-                        <StatusActionMenu
-                          variant="pill"
-                          currentStatus={order.orderStatus}
-                          nextStatuses={STATUS_FLOW[order.orderStatus] || []}
-                          canCancel={!NON_CANCELLABLE.includes(order.orderStatus)}
-                          onSelectStatus={(s) => handleStatusChange(order, s)}
-                          onCancel={() => setCancelModalOrder(order)}
-                        />
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="mt-2.5 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                    {["refund_pending", "partial_refunded"].includes(order.paymentStatus) && (
-                      <button
-                        onClick={() => setSettleRefundOrder(order)}
-                        className="flex h-9 items-center rounded-lg border border-amber-400 px-3 text-xs font-semibold text-amber-500 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-500/10"
-                      >
-                        Settle refund
-                      </button>
-                    )}
-                    <button
-                      onClick={() => downloadInvoice(order)}
-                      disabled={downloadingInvoiceId === order._id}
-                      className="ml-auto flex h-9 items-center gap-1.5 rounded-lg border border-mist-200 px-3 text-xs font-medium text-mist-700 hover:bg-mist-50 disabled:opacity-50 dark:border-white/10 dark:text-mist-300 dark:hover:bg-white/5"
+                    {/* Labelled dropdowns — tap the current value to change it */}
+                    <div
+                      className="mt-3 grid grid-cols-2 gap-2.5 border-t border-mist-100 pt-3 dark:border-white/10"
+                      onClick={(event) => event.stopPropagation()}
                     >
-                      {downloadingInvoiceId === order._id ? (
-                        <Loader2 size={14} className="animate-spin" />
-                      ) : (
-                        <FileDown size={14} />
+                      <div className="min-w-0">
+                        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-mist-500 dark:text-mist-300">
+                          Payment
+                        </p>
+                        {updatingPaymentId === order._id ? (
+                          <div className="flex min-h-[40px] items-center px-2.5">
+                            <Loader2
+                              size={16}
+                              className="animate-spin text-mist-400 dark:text-mist-500"
+                            />
+                          </div>
+                        ) : (
+                          <PaymentActionMenu
+                            variant="pill"
+                            currentStatus={order.paymentStatus}
+                            onSelect={(paymentStatus) => handlePaymentChange(order, paymentStatus)}
+                          />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-mist-500 dark:text-mist-300">
+                          Order status
+                        </p>
+                        {updatingOrderId === order._id ? (
+                          <div className="flex min-h-[40px] items-center px-2.5">
+                            <Loader2
+                              size={16}
+                              className="animate-spin text-mist-400 dark:text-mist-500"
+                            />
+                          </div>
+                        ) : (
+                          <StatusActionMenu
+                            variant="pill"
+                            currentStatus={order.orderStatus}
+                            nextStatuses={STATUS_FLOW[order.orderStatus] || []}
+                            canCancel={!NON_CANCELLABLE.includes(order.orderStatus)}
+                            onSelectStatus={(orderStatus) => handleStatusChange(order, orderStatus)}
+                            onCancel={() => setCancelModalOrder(order)}
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    <div
+                      className="mt-2.5 flex items-center gap-2"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      {["refund_pending", "partial_refunded"].includes(order.paymentStatus) && (
+                        <button
+                          onClick={() => setSettleRefundOrder(order)}
+                          className="flex h-9 items-center rounded-lg border border-amber-400 px-3 text-xs font-semibold text-amber-500 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-500/10"
+                        >
+                          Settle refund
+                        </button>
                       )}
-                      Invoice
-                    </button>
+                      <button
+                        onClick={() => downloadInvoice(order)}
+                        disabled={downloadingInvoiceId === order._id}
+                        className="ml-auto flex h-9 items-center gap-1.5 rounded-lg border border-mist-200 px-3 text-xs font-medium text-mist-700 hover:bg-mist-50 disabled:opacity-50 dark:border-white/10 dark:text-mist-300 dark:hover:bg-white/5"
+                      >
+                        {downloadingInvoiceId === order._id ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <FileDown size={14} />
+                        )}
+                        Invoice
+                      </button>
+                    </div>
                   </div>
-                </div>
                 );
               })}
             </div>
@@ -456,6 +523,7 @@ export default function OrdersListPage() {
       {activeOrder && (
         <OrderDetailDrawer
           orderSummary={activeOrder}
+          initialInvoice={invoiceById.get(activeOrder.invoiceId)}
           allOrders={orders}
           onClose={() => setActiveOrder(null)}
           onChanged={() => {

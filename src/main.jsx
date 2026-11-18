@@ -1,3 +1,7 @@
+/**
+ * App entry point: mounts React and wraps the app in the router, theme, auth and toast providers.
+ */
+
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";

@@ -1,4 +1,9 @@
-import React from "react";
+/**
+ * Labelled select box used in the invoice forms.
+ *
+ * Used by: components/invoice/UpdateInvoiceModal.jsx, pages/CreateInvoicePage.jsx
+ */
+
 import { ChevronDown } from "lucide-react";
 
 /**
@@ -16,7 +21,7 @@ export default function DropdownGroup({ label, value, options = [], onChange }) 
       <div className="relative">
         <select
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(event) => onChange(event.target.value)}
           className="w-full appearance-none bg-transparent font-bold outline-none text-slate-800 text-sm pr-5 cursor-pointer"
         >
           {options.map((opt) => (

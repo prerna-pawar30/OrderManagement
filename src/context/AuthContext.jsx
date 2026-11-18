@@ -1,11 +1,29 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { AuthService } from "../api/services";
-import { tokenStorage, extractToken } from "../api/tokenStorage";
+/**
+ * Login state for the whole app: current employee, login(), logout(); the token is kept by
+ * ApiService.tokenStorage.
+ *
+ * Used by: components/layout/Header.jsx, main.jsx, pages/AnalyticsPage.jsx, pages/LoginPage.jsx,
+ * routes/ProtectedRoute.jsx
+ * API: AuthService.login, AuthService.logout, extractToken, tokenStorage.clear, tokenStorage.get,
+ * tokenStorage.set
+ */
+
+import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { AuthService } from "../backend/ApiService";
+import { tokenStorage, extractToken } from "../backend/ApiService";
 
 const AuthContext = createContext(null);
 
 const STORAGE_KEY = "digident_employee";
 
+/**
+ * Provides the logged-in employee, login() and logout() to the whole app. The profile is kept in
+ * sessionStorage.
+ *
+ * @param {object} props
+ * @param {React.ReactNode} props.children The app.
+ * @returns {JSX.Element}
+ */
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     try {
@@ -70,6 +88,11 @@ export function AuthProvider({ children }) {
   );
 }
 
+/**
+ * Reads the auth state. Must be used inside AuthProvider.
+ *
+ * @returns {{ user: object|null, login: Function, logout: Function, initializing: boolean }}
+ */
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");

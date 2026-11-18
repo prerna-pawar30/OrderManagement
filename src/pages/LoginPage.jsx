@@ -1,4 +1,11 @@
-import React, { useState } from "react";
+/**
+ * Staff sign-in screen.
+ *
+ * Route: /login
+ * Used by: routes/AppRoutes.jsx
+ */
+
+import { useState } from "react";
 import { useLocation, useNavigate, Navigate } from "react-router-dom";
 import { Lock, Mail, Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -16,8 +23,8 @@ export default function LoginPage() {
     return <Navigate to={location.state?.from?.pathname || "/orders"} replace />;
   }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     setError("");
     setLoading(true);
     try {
@@ -51,18 +58,22 @@ export default function LoginPage() {
             and refund.
           </p>
           <p className="mt-4 max-w-sm text-sm text-mist-300">
-            Staff-entered orders, courier tracking, returns and client payment history — kept in
-            one ledger so nothing gets lost between calls.
+            Staff-entered orders, courier tracking, returns and client payment history — kept in one
+            ledger so nothing gets lost between calls.
           </p>
         </div>
 
-        <p className="text-xs text-mist-400">© {new Date().getFullYear()} Digident Internal Tools</p>
+        <p className="text-xs text-mist-400">
+          © {new Date().getFullYear()} Digident Internal Tools
+        </p>
       </div>
 
       <div className="flex items-center justify-center bg-white px-6 py-16 dark:bg-ink-950">
         <form onSubmit={handleSubmit} className="w-full max-w-sm">
           <h1 className="font-display text-2xl font-bold text-ink-950 dark:text-white">Sign in</h1>
-          <p className="mt-1 text-sm text-mist-500 dark:text-mist-300">Use your staff account to open the console.</p>
+          <p className="mt-1 text-sm text-mist-500 dark:text-mist-300">
+            Use your staff account to open the console.
+          </p>
 
           <div className="mt-8 space-y-4">
             <label className="block">
@@ -76,7 +87,9 @@ export default function LoginPage() {
                   required
                   autoComplete="email"
                   value={form.email}
-                  onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                  onChange={(event) =>
+                    setForm((prevForm) => ({ ...prevForm, email: event.target.value }))
+                  }
                   placeholder="you@digident.in"
                   className="w-full bg-transparent text-sm text-ink-950 outline-none placeholder:text-mist-300 dark:text-white dark:placeholder:text-mist-500"
                 />
@@ -94,7 +107,9 @@ export default function LoginPage() {
                   required
                   autoComplete="current-password"
                   value={form.password}
-                  onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                  onChange={(event) =>
+                    setForm((prevForm) => ({ ...prevForm, password: event.target.value }))
+                  }
                   placeholder="••••••••"
                   className="w-full bg-transparent text-sm text-ink-950 outline-none placeholder:text-mist-300 dark:text-white dark:placeholder:text-mist-500"
                 />

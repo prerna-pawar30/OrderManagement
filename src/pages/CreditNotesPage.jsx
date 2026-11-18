@@ -1,12 +1,21 @@
-import React, { useEffect, useState } from "react";
+/**
+ * List of all credit notes with filters; open one to apply, refund or cancel it, or create a new
+ * one.
+ *
+ * Route: /credit-notes
+ * Used by: routes/AppRoutes.jsx
+ * API: CreditNoteService.getAll
+ */
+
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FileText, FileDown, Loader2, Inbox, Search, FilePlus2, ChevronRight } from "lucide-react";
 import toast from "react-hot-toast";
-import { CreditNoteService } from "../api/services";
-import { generateCreditNotePdf } from "../lib/generateCreditNotePdf";
-import { formatCurrency, formatDate, formatDateTime, initials } from "../lib/format";
-import CreateCreditNoteModal from "../components/CreateCreditNoteModal";
-import CreditNoteDetailModal from "../components/CreditNoteDetailModal";
+import { CreditNoteService } from "../backend/ApiService";
+import { generateCreditNotePdf } from "../utils/CreditNotePdf";
+import { formatCurrency, formatDate, formatDateTime, initials } from "../utils/Format";
+import CreateCreditNoteModal from "../components/creditnote/CreateCreditNoteModal";
+import CreditNoteDetailModal from "../components/creditnote/CreditNoteDetailModal";
 
 /*
  * Credit Notes — reads the CreditNote collection (own model/service/
@@ -23,20 +32,37 @@ const TYPE_BADGE = {
   cancellation: "bg-rose-50 text-rose-600 dark:bg-rose-500/15 dark:text-rose-400",
 };
 const STATUS = {
-  open: { label: "Not yet used", cls: "bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400" },
-  partially_used: { label: "Partly used", cls: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300" },
+  open: {
+    label: "Not yet used",
+    cls: "bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-400",
+  },
+  partially_used: {
+    label: "Partly used",
+    cls: "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300",
+  },
   used: { label: "Used", cls: "bg-mint-100 text-mint-500 dark:bg-mint-500/15 dark:text-mint-400" },
-  cancelled: { label: "Cancelled", cls: "bg-mist-100 text-mist-500 dark:bg-white/10 dark:text-mist-300" },
+  cancelled: {
+    label: "Cancelled",
+    cls: "bg-mist-100 text-mist-500 dark:bg-white/10 dark:text-mist-300",
+  },
 };
 
-const METHOD_LABEL = { cash: "Cash", upi: "UPI", bank_transfer: "Bank transfer", card: "Card", other: "Other" };
+const METHOD_LABEL = {
+  cash: "Cash",
+  upi: "UPI",
+  bank_transfer: "Bank transfer",
+  card: "Card",
+  other: "Other",
+};
 
 const noteItems = (note) =>
-  (note.items || note.returnedItems || []).map((it) => ({
-    label: it.description || `${it.productName || ""}${it.variantName ? ` (${it.variantName})` : ""}`,
-    quantity: it.qty ?? it.quantity ?? 0,
-    price: Number(it.price || 0),
-    total: Number(it.totalAmount ?? (it.qty ?? it.quantity ?? 0) * (it.price || 0)),
+  (note.items || note.returnedItems || []).map((item) => ({
+    label:
+      item.description ||
+      `${item.productName || ""}${item.variantName ? ` (${item.variantName})` : ""}`,
+    quantity: item.qty ?? item.quantity ?? 0,
+    price: Number(item.price || 0),
+    total: Number(item.totalAmount ?? (item.qty ?? item.quantity ?? 0) * (item.price || 0)),
   }));
 
 const noteTotal = (note) => Number(note.amount ?? note.summary?.totalAmount ?? 0);
@@ -45,7 +71,9 @@ const noteBalance = (note) => Number(note.balance ?? 0);
 export default function CreditNotesPage() {
   const navigate = useNavigate();
   const openCustomer = (note) =>
-    navigate(`/customers/${encodeURIComponent(note.customerPhone)}?name=${encodeURIComponent(note.customerName || "")}`);
+    navigate(
+      `/customers/${encodeURIComponent(note.customerPhone)}?name=${encodeURIComponent(note.customerName || "")}`
+    );
 
   const [creditNotes, setCreditNotes] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -75,8 +103,8 @@ export default function CreditNotesPage() {
   };
 
   useEffect(() => {
-    const t = setTimeout(load, 300); // debounce search
-    return () => clearTimeout(t);
+    const timerId = setTimeout(load, 300); // debounce search
+    return () => clearTimeout(timerId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, statusFilter, typeFilter]);
 
@@ -91,12 +119,16 @@ export default function CreditNotesPage() {
     }
   };
 
-  const canUse = (note) => ["open", "partially_used"].includes(note.status) && Number(note.balance) > 0.01;
+  const canUse = (note) =>
+    ["open", "partially_used"].includes(note.status) && Number(note.balance) > 0.01;
 
   // Everything (apply to invoice, pay back, cancel, history) happens in the
   // detail screen — the list only needs one clear button + PDF.
   const Actions = ({ note }) => (
-    <div className="flex flex-wrap justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+    <div
+      className="flex flex-wrap justify-end gap-1.5"
+      onClick={(event) => event.stopPropagation()}
+    >
       <button
         onClick={() => setOpenNote(note)}
         className={`inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold ${
@@ -113,45 +145,63 @@ export default function CreditNotesPage() {
         title="Download PDF"
         className="inline-flex items-center rounded-lg border border-mist-200 px-2 py-1.5 text-xs text-mist-700 hover:bg-mist-50 disabled:opacity-50 dark:border-white/10 dark:text-mist-300 dark:hover:bg-white/5"
       >
-        {busyId === note.creditNoteId ? <Loader2 size={13} className="animate-spin" /> : <FileDown size={13} />}
+        {busyId === note.creditNoteId ? (
+          <Loader2 size={13} className="animate-spin" />
+        ) : (
+          <FileDown size={13} />
+        )}
       </button>
     </div>
   );
 
   const StatusBadge = ({ note }) => {
-    const st = STATUS[note.status] || STATUS.open;
-    return <span className={`inline-block w-fit whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold ${st.cls}`}>{st.label}</span>;
+    const statusConfig = STATUS[note.status] || STATUS.open;
+    return (
+      <span
+        className={`inline-block w-fit whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusConfig.cls}`}
+      >
+        {statusConfig.label}
+      </span>
+    );
   };
 
   // Where the credit went — one small line per usage entry
   const UsageList = ({ note }) => {
     const usage = note.usage || [];
     if (!usage.length) {
-      return <p className="text-xs text-mist-500 dark:text-mist-500">{note.status === "cancelled" ? "Cancelled" : "Not used yet"}</p>;
+      return (
+        <p className="text-xs text-mist-500 dark:text-mist-500">
+          {note.status === "cancelled" ? "Cancelled" : "Not used yet"}
+        </p>
+      );
     }
     return (
       <ul className="space-y-1.5">
-        {usage.map((u, i) => (
-          <li key={u.usageId || i} className="text-xs">
+        {usage.map((usageEntry, index) => (
+          <li key={usageEntry.usageId || index} className="text-xs">
             <div className="flex items-center justify-between gap-3">
-              {u.kind === "applied" ? (
+              {usageEntry.kind === "applied" ? (
                 <span className="text-mist-700 dark:text-mist-300">
                   Applied to{" "}
                   <span className="rounded bg-mint-100 px-1.5 py-0.5 font-mono font-semibold text-mint-500 dark:bg-mint-500/15 dark:text-mint-400">
-                    {u.appliedToNumber || "invoice"}
+                    {usageEntry.appliedToNumber || "invoice"}
                   </span>
                 </span>
               ) : (
                 <span className="text-mist-700 dark:text-mist-300">
                   Paid back{" "}
                   <span className="rounded bg-sky-50 px-1.5 py-0.5 font-semibold text-sky-600 dark:bg-sky-500/15 dark:text-sky-400">
-                    {METHOD_LABEL[u.method] || u.method || "—"}
+                    {METHOD_LABEL[usageEntry.method] || usageEntry.method || "—"}
                   </span>
                 </span>
               )}
-              <span className="whitespace-nowrap font-semibold text-ink-950 dark:text-white">{formatCurrency(u.amount)}</span>
+              <span className="whitespace-nowrap font-semibold text-ink-950 dark:text-white">
+                {formatCurrency(usageEntry.amount)}
+              </span>
             </div>
-            <p className="mt-0.5 text-[11px] text-mist-500 dark:text-mist-500">{formatDateTime(u.at)}</p>
+            <p className="mt-0.5 text-[11px] text-mist-500 dark:text-mist-500">
+              {formatDateTime(usageEntry.at)}
+            </p>
           </li>
         ))}
       </ul>
@@ -165,7 +215,9 @@ export default function CreditNotesPage() {
     const usedPct = total > 0 ? Math.min(100, Math.max(0, ((total - balance) / total) * 100)) : 0;
     return (
       <div className="">
-        <p className="whitespace-nowrap font-display text-base font-bold text-ink-950 dark:text-white">{formatCurrency(total)}</p>
+        <p className="whitespace-nowrap font-display text-base font-bold text-ink-950 dark:text-white">
+          {formatCurrency(total)}
+        </p>
         {note.summary?.totalTax > 0 && (
           <p className="text-[11px] text-mist-500 dark:text-mist-500">
             incl. GST {formatCurrency(note.summary.totalTax)}
@@ -179,7 +231,10 @@ export default function CreditNotesPage() {
             <p className="mt-1 text-[11px] text-mist-500 dark:text-mist-500">
               {balance > 0.01 ? (
                 <>
-                  <span className="font-semibold text-amber-600 dark:text-amber-400">{formatCurrency(balance)}</span> left
+                  <span className="font-semibold text-amber-600 dark:text-amber-400">
+                    {formatCurrency(balance)}
+                  </span>{" "}
+                  left
                 </>
               ) : (
                 "Fully used"
@@ -195,10 +250,12 @@ export default function CreditNotesPage() {
     <div>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-display text-base font-bold text-ink-950 dark:text-white">Credit Notes</h2>
+          <h2 className="font-display text-base font-bold text-ink-950 dark:text-white">
+            Credit Notes
+          </h2>
           <p className="text-sm text-mist-500 dark:text-mist-300">
-            Click any credit note to see its details and use it — apply it to one of the customer's invoices or give
-            the money back.
+            Click any credit note to see its details and use it — apply it to one of the customer's
+            invoices or give the money back.
           </p>
         </div>
         <button
@@ -212,14 +269,26 @@ export default function CreditNotesPage() {
       {summary && (
         <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
           {[
-            { label: "Total issued", value: summary.totalIssued, sub: `${summary.totalCreditNotes} credit notes`, cls: "text-mist-500 dark:text-mist-300" },
+            {
+              label: "Total issued",
+              value: summary.totalIssued,
+              sub: `${summary.totalCreditNotes} credit notes`,
+              cls: "text-mist-500 dark:text-mist-300",
+            },
             { label: "Applied to orders", value: summary.totalApplied, cls: "text-mint-500" },
             { label: "Paid back", value: summary.totalRefunded, cls: "text-sky-500" },
             { label: "Still unused", value: summary.totalUnapplied, cls: "text-amber-500" },
           ].map((card) => (
-            <div key={card.label} className="rounded-xl2 border border-mist-200 bg-white p-4 dark:border-white/10 dark:bg-ink-900">
-              <p className={`text-xs font-semibold uppercase tracking-wide ${card.cls}`}>{card.label}</p>
-              <p className="mt-1.5 font-display text-xl font-bold text-ink-950 dark:text-white">{formatCurrency(card.value)}</p>
+            <div
+              key={card.label}
+              className="rounded-xl2 border border-mist-200 bg-white p-4 dark:border-white/10 dark:bg-ink-900"
+            >
+              <p className={`text-xs font-semibold uppercase tracking-wide ${card.cls}`}>
+                {card.label}
+              </p>
+              <p className="mt-1.5 font-display text-xl font-bold text-ink-950 dark:text-white">
+                {formatCurrency(card.value)}
+              </p>
               {card.sub && <p className="text-xs text-mist-500 dark:text-mist-300">{card.sub}</p>}
             </div>
           ))}
@@ -228,17 +297,20 @@ export default function CreditNotesPage() {
 
       <div className="mb-5 flex flex-col gap-2 sm:flex-row">
         <div className="relative w-full sm:w-80">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-mist-500 dark:text-mist-500" />
+          <Search
+            size={16}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-mist-500 dark:text-mist-500"
+          />
           <input
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(event) => setQuery(event.target.value)}
             placeholder="Search CN no., invoice, customer, phone…"
             className="w-full rounded-lg border border-mist-200 bg-white py-2.5 pl-9 pr-3 text-sm text-ink-950 outline-none focus:border-orange-500 dark:border-ink-700 dark:bg-ink-900 dark:text-white dark:placeholder:text-mist-500"
           />
         </div>
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(event) => setStatusFilter(event.target.value)}
           className="rounded-lg border border-mist-200 bg-white px-3 py-2.5 text-sm text-ink-950 dark:border-ink-700 dark:bg-ink-900 dark:text-white"
         >
           <option value="">All statuses</option>
@@ -248,7 +320,7 @@ export default function CreditNotesPage() {
         </select>
         <select
           value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
+          onChange={(event) => setTypeFilter(event.target.value)}
           className="rounded-lg border border-mist-200 bg-white px-3 py-2.5 text-sm text-ink-950 dark:border-ink-700 dark:bg-ink-900 dark:text-white"
         >
           <option value="">All types</option>
@@ -266,8 +338,12 @@ export default function CreditNotesPage() {
         ) : creditNotes.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
             <Inbox size={28} className="text-mist-300 dark:text-mist-500" />
-            <p className="text-sm font-medium text-ink-950 dark:text-white">No credit notes found</p>
-            <p className="text-xs text-mist-500 dark:text-mist-300">Create one with “New credit note”.</p>
+            <p className="text-sm font-medium text-ink-950 dark:text-white">
+              No credit notes found
+            </p>
+            <p className="text-xs text-mist-500 dark:text-mist-300">
+              Create one with “New credit note”.
+            </p>
           </div>
         ) : (
           <>
@@ -293,12 +369,17 @@ export default function CreditNotesPage() {
                       {/* Credit note */}
                       <td className="px-3 py-4">
                         <div className="flex items-center gap-1.5 whitespace-nowrap font-mono text-xs font-semibold text-ink-950 dark:text-white">
-                          <FileText size={14} className="shrink-0 text-orange-500" /> {note.creditNoteNumber}
+                          <FileText size={14} className="shrink-0 text-orange-500" />{" "}
+                          {note.creditNoteNumber}
                         </div>
-                        <span className={`mt-1.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold capitalize ${TYPE_BADGE[note.type] || ""}`}>
+                        <span
+                          className={`mt-1.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold capitalize ${TYPE_BADGE[note.type] || ""}`}
+                        >
                           {note.type}
                         </span>
-                        <p className="mt-1.5 text-[11px] text-mist-500">{formatDateTime(note.creditNoteDate)}</p>
+                        <p className="mt-1.5 text-[11px] text-mist-500">
+                          {formatDateTime(note.creditNoteDate)}
+                        </p>
                         <p className="mt-1.5 text-[11px] text-mist-500">
                           {note.invoiceNumber ? (
                             <>
@@ -306,7 +387,11 @@ export default function CreditNotesPage() {
                               <span className="rounded bg-mist-100 px-1 py-0.5 font-mono font-semibold text-ink-950 dark:bg-white/10 dark:text-white">
                                 {note.invoiceNumber}
                               </span>
-                              {note.invoiceDate && <span className="block pt-0.5">Invoice date {formatDate(note.invoiceDate)}</span>}
+                              {note.invoiceDate && (
+                                <span className="block pt-0.5">
+                                  Invoice date {formatDate(note.invoiceDate)}
+                                </span>
+                              )}
                             </>
                           ) : (
                             "No invoice"
@@ -317,8 +402,8 @@ export default function CreditNotesPage() {
                       {/* Customer */}
                       <td className="px-3 py-4">
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation();
+                          onClick={(event) => {
+                            event.stopPropagation();
                             openCustomer(note);
                           }}
                           className="flex items-start gap-2.5 text-left"
@@ -327,24 +412,38 @@ export default function CreditNotesPage() {
                             {initials(note.customerName)}
                           </span>
                           <div className="min-w-0">
-                            <p className="font-medium text-ink-950 hover:underline dark:text-white">{note.customerName}</p>
+                            <p className="font-medium text-ink-950 hover:underline dark:text-white">
+                              {note.customerName}
+                            </p>
                             {note.customerCompany && note.customerCompany !== note.customerName && (
-                              <p className="text-xs text-mist-700 dark:text-mist-300">{note.customerCompany}</p>
+                              <p className="text-xs text-mist-700 dark:text-mist-300">
+                                {note.customerCompany}
+                              </p>
                             )}
-                            <p className="text-xs text-mist-500 dark:text-mist-500">{note.customerPhone}</p>
+                            <p className="text-xs text-mist-500 dark:text-mist-500">
+                              {note.customerPhone}
+                            </p>
                           </div>
                         </button>
                       </td>
 
                       {/* Reason & items */}
                       <td className="px-3 py-4">
-                        <p className="text-xs font-semibold text-ink-950 dark:text-white">{note.reason || "—"}</p>
+                        <p className="text-xs font-semibold text-ink-950 dark:text-white">
+                          {note.reason || "—"}
+                        </p>
                         <ul className="mt-1 space-y-0.5">
-                          {noteItems(note).map((it, i) => (
-                            <li key={i} className="text-xs text-mist-700 dark:text-mist-300">
-                              <span className="font-semibold text-ink-950 dark:text-white">{it.quantity} ×</span> {it.label}
-                              {it.price > 0 && (
-                                <span className="whitespace-nowrap text-mist-500 dark:text-mist-500"> @ {formatCurrency(it.price)}</span>
+                          {noteItems(note).map((item, index) => (
+                            <li key={index} className="text-xs text-mist-700 dark:text-mist-300">
+                              <span className="font-semibold text-ink-950 dark:text-white">
+                                {item.quantity} ×
+                              </span>{" "}
+                              {item.label}
+                              {item.price > 0 && (
+                                <span className="whitespace-nowrap text-mist-500 dark:text-mist-500">
+                                  {" "}
+                                  @ {formatCurrency(item.price)}
+                                </span>
                               )}
                             </li>
                           ))}
@@ -376,23 +475,31 @@ export default function CreditNotesPage() {
             {/* Cards for phones/tablets */}
             <div className="divide-y divide-mist-100 dark:divide-white/10 xl:hidden">
               {creditNotes.map((note) => (
-                <div key={note.creditNoteId} className="cursor-pointer p-4 hover:bg-orange-50/40 dark:hover:bg-white/5" onClick={() => setOpenNote(note)}>
+                <div
+                  key={note.creditNoteId}
+                  className="cursor-pointer p-4 hover:bg-orange-50/40 dark:hover:bg-white/5"
+                  onClick={() => setOpenNote(note)}
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="flex flex-wrap items-center gap-1.5 font-mono text-xs font-semibold text-ink-950 dark:text-white">
                         <FileText size={13} className="text-orange-500" /> {note.creditNoteNumber}
-                        <span className={`rounded px-1.5 py-0.5 font-sans text-[10px] font-semibold capitalize ${TYPE_BADGE[note.type] || ""}`}>
+                        <span
+                          className={`rounded px-1.5 py-0.5 font-sans text-[10px] font-semibold capitalize ${TYPE_BADGE[note.type] || ""}`}
+                        >
                           {note.type}
                         </span>
                       </p>
-                      <p className="mt-1 text-[11px] text-mist-500 dark:text-mist-500">{formatDateTime(note.creditNoteDate)}</p>
+                      <p className="mt-1 text-[11px] text-mist-500 dark:text-mist-500">
+                        {formatDateTime(note.creditNoteDate)}
+                      </p>
                     </div>
                     <StatusBadge note={note} />
                   </div>
 
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
+                    onClick={(event) => {
+                      event.stopPropagation();
                       openCustomer(note);
                     }}
                     className="mt-3 flex min-w-0 items-center gap-2.5 text-left"
@@ -404,31 +511,52 @@ export default function CreditNotesPage() {
                       <p className="truncate font-medium text-ink-950 hover:underline dark:text-white">
                         {note.customerName}
                         {note.customerCompany && note.customerCompany !== note.customerName && (
-                          <span className="font-normal text-mist-500 dark:text-mist-500"> · {note.customerCompany}</span>
+                          <span className="font-normal text-mist-500 dark:text-mist-500">
+                            {" "}
+                            · {note.customerCompany}
+                          </span>
                         )}
                       </p>
-                      <p className="text-xs text-mist-500 dark:text-mist-500">{note.customerPhone}</p>
+                      <p className="text-xs text-mist-500 dark:text-mist-500">
+                        {note.customerPhone}
+                      </p>
                     </div>
                   </button>
 
                   <div className="mt-3 grid grid-cols-1 gap-3 rounded-lg bg-mist-50 p-3 sm:grid-cols-3 dark:bg-white/5">
                     <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-mist-500 dark:text-mist-500">Reason &amp; items</p>
-                      <p className="mt-1 text-xs font-semibold text-ink-950 dark:text-white">{note.reason || "—"}</p>
-                      {noteItems(note).map((it, i) => (
-                        <p key={i} className="text-xs text-mist-700 dark:text-mist-300">
-                          {it.quantity} × {it.label}
-                          {it.price > 0 && <span className="text-mist-500"> @ {formatCurrency(it.price)}</span>}
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-mist-500 dark:text-mist-500">
+                        Reason &amp; items
+                      </p>
+                      <p className="mt-1 text-xs font-semibold text-ink-950 dark:text-white">
+                        {note.reason || "—"}
+                      </p>
+                      {noteItems(note).map((item, index) => (
+                        <p key={index} className="text-xs text-mist-700 dark:text-mist-300">
+                          {item.quantity} × {item.label}
+                          {item.price > 0 && (
+                            <span className="text-mist-500"> @ {formatCurrency(item.price)}</span>
+                          )}
                         </p>
                       ))}
                     </div>
                     <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-mist-500 dark:text-mist-500">Against invoice</p>
-                      <p className="mt-1 font-mono text-xs font-semibold text-ink-950 dark:text-white">{note.invoiceNumber || "No invoice"}</p>
-                      {note.invoiceDate && <p className="text-[11px] text-mist-500 dark:text-mist-500">{formatDate(note.invoiceDate)}</p>}
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-mist-500 dark:text-mist-500">
+                        Against invoice
+                      </p>
+                      <p className="mt-1 font-mono text-xs font-semibold text-ink-950 dark:text-white">
+                        {note.invoiceNumber || "No invoice"}
+                      </p>
+                      {note.invoiceDate && (
+                        <p className="text-[11px] text-mist-500 dark:text-mist-500">
+                          {formatDate(note.invoiceDate)}
+                        </p>
+                      )}
                     </div>
                     <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-mist-500 dark:text-mist-500">Amount</p>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-mist-500 dark:text-mist-500">
+                        Amount
+                      </p>
                       <div className="mt-1">
                         <AmountCell note={note} />
                       </div>

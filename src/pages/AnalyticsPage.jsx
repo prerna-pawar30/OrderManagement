@@ -1,21 +1,23 @@
-import React, { useEffect, useMemo, useState } from "react";
+/**
+ * Analytics dashboard: revenue, orders, statuses, funnel, products and locations for a date range
+ * (manual orders + direct invoices).
+ *
+ * Route: /analytics
+ * Used by: routes/AppRoutes.jsx
+ * API: InvoiceService.getAllInvoices, ManualOrderService.getAnalytics
+ */
+
+import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import {
   Loader2,
   Inbox,
   RefreshCw,
-  MoreHorizontal,
   IndianRupee,
   ShoppingCart,
   Receipt,
   Users,
-  PackageCheck,
-  Truck,
-  ClipboardList,
-  CheckCircle2,
   RotateCcw,
-  MapPin,
-  XCircle,
 } from "lucide-react";
 import { ThemeProvider } from "@mui/material/styles";
 import ToggleButton from "@mui/material/ToggleButton";
@@ -28,213 +30,34 @@ import { PieChart } from "@mui/x-charts/PieChart";
 import { RadarChart } from "@mui/x-charts/RadarChart";
 import { ScatterChart } from "@mui/x-charts/ScatterChart";
 
-import { ManualOrderService } from "../api/services";
-import { formatCurrency, formatCompactCurrency, initials } from "../lib/format";
-import { getMuiTheme, STATUS_COLORS, CHART_PALETTE, FUNNEL_RAMP } from "../theme/muiTheme";
-import FulfillmentFunnel from "../components/FulfillmentFunnel";
-import WelcomeBanner from "../components/WelcomeBanner";
-import RadialTickRing from "../components/RadialTickRing";
+import { ManualOrderService, InvoiceService } from "../backend/ApiService";
+import { fetchAllInvoices } from "../utils/InvoiceCustomers";
+import { directInvoicesInRange, mergeInvoiceAnalytics } from "../utils/InvoiceAnalytics";
+import { formatCurrency, formatCompactCurrency, initials } from "../utils/Format";
+import { getMuiTheme, STATUS_COLORS, CHART_PALETTE, FUNNEL_RAMP } from "../constants/MuiTheme";
+import FulfillmentFunnel from "../components/dashboard/FulfillmentFunnel";
+import WelcomeBanner from "../components/dashboard/WelcomeBanner";
+import RadialTickRing from "../components/dashboard/RadialTickRing";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
+import { useIsMobile } from "../hooks/UseIsMobile";
+import {
+  ORDER_STATUS_ORDER,
+  PAYMENT_STATUS_ORDER,
+  FUNNEL_STAGES,
+  RADAR_METRICS,
+  LOCATION_TABS,
+} from "../constants/AnalyticsConfig";
+import { IconStatTile } from "../components/dashboard/IconStatTile";
+import { StageTile } from "../components/dashboard/StageTile";
+import { ChartCard } from "../components/dashboard/ChartCard";
+import { CenterLabelDonut } from "../components/dashboard/CenterLabelDonut";
+import { LocationLeaderboard } from "../components/dashboard/LocationLeaderboard";
 
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(
-    () => typeof window !== "undefined" && window.innerWidth < 640
-  );
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 639px)");
-    const onChange = (e) => setIsMobile(e.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
-  return isMobile;
-}
-
-const ORDER_STATUS_ORDER = [
-  "placed",
-  "packed",
-  "confirmed",
-  "shipped",
-  "delivered",
-  "partial_returned",
-  "returned",
-  "cancelled",
-];
-
-const PAYMENT_STATUS_ORDER = ["pending", "paid", "refund_pending", "partial_refunded", "refunded"];
-
-const STATUS_ICONS = {
-  placed: ClipboardList,
-  packed: PackageCheck,
-  confirmed: CheckCircle2,
-  shipped: Truck,
-  delivered: PackageCheck,
-  partial_returned: RotateCcw,
-  returned: RotateCcw,
-  cancelled: XCircle,
-};
-
-// Forward fulfillment pipeline only — cancelled orders never reach it, so
-// they're excluded rather than shown as a "stage".
-const FUNNEL_STAGES = [
-  { stage: "placed", label: "Placed", icon: ClipboardList },
-  { stage: "packed", label: "Packed", icon: PackageCheck },
-  { stage: "confirmed", label: "Confirmed", icon: CheckCircle2 },
-  { stage: "shipped", label: "Shipped", icon: Truck },
-  { stage: "delivered", label: "Delivered", icon: CheckCircle2 },
-];
-
-const RADAR_METRICS = ["Units sold", "Revenue", "Orders"];
-
-const LOCATION_TABS = [
-  { key: "salesByCity", label: "City", field: "city" },
-  { key: "salesByState", label: "State", field: "state" },
-  { key: "salesByCountry", label: "Country", field: "country" },
-];
-
-const labelize = (v) => (v ? v.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase()) : v);
+const labelize = (text) =>
+  text ? text.replace(/_/g, " ").replace(/^\w/, (firstLetter) => firstLetter.toUpperCase()) : text;
 
 // ---------- Presentational atoms (Sellix-style: icon badge + big number) ----------
-
-function IconStatTile({ icon: Icon, label, value, sub }) {
-  return (
-    <div className="relative flex h-full flex-col overflow-hidden rounded-xl2 border border-mist-200 bg-white p-5 shadow-panel dark:border-white/10 dark:bg-ink-900">
-      {/* Oversized watermark icon — turns the extra height (needed to match
-          the donut card next to it) into a deliberate design flourish
-          instead of dead whitespace. */}
-      {Icon && (
-        <Icon
-          size={112}
-          strokeWidth={1.3}
-          className="pointer-events-none absolute -bottom-6 -right-6 text-orange-500/[0.07] dark:text-orange-400/[0.09]"
-        />
-      )}
-
-      {/* Icon badge on its own row so the label below always has full card
-          width to wrap into — prevents "TOTAL REVENUE" / "UNIQUE CUSTOMERS"
-          from clipping against the card edge in a 4-up grid. */}
-      <div className="relative flex items-start justify-between gap-2">
-        {Icon && (
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-600 dark:bg-orange-500/15 dark:text-orange-400">
-            <Icon size={22} />
-          </span>
-        )}
-      </div>
-
-      <p
-        title={label}
-        className="relative mt-3 line-clamp-2 min-h-[2.2em] text-[11px] font-semibold uppercase leading-tight tracking-normal text-mist-500 dark:text-mist-300"
-      >
-        {label}
-      </p>
-
-      <div className="relative mt-2">
-        <p className="font-display text-3xl font-bold leading-none text-ink-950 dark:text-white">
-          {value}
-        </p>
-        {sub && <p className="mt-2 text-xs text-mist-500 dark:text-mist-300">{sub}</p>}
-      </div>
-    </div>
-  );
-}
-
-function StageTile({ icon: Icon, label, value }) {
-  return (
-    <div className="flex h-full flex-col justify-between gap-3 rounded-xl2 border border-mist-200 bg-white p-4 shadow-panel dark:border-white/10 dark:bg-ink-900">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-600 dark:bg-orange-500/15 dark:text-orange-400">
-        <Icon size={18} />
-      </span>
-      <div className="min-w-0">
-        <p className="font-display text-xl font-bold leading-tight text-ink-950 dark:text-white">
-          {value.toLocaleString("en-IN")}
-        </p>
-        <p className="truncate text-xs font-medium text-mist-500 dark:text-mist-300">{label}</p>
-      </div>
-    </div>
-  );
-}
-
-// `fill`: stretch this card to match a taller sibling in the same grid row
-// (row must NOT use items-start) and let its content grow to fill that
-// height, instead of leaving dead space at the bottom.
-function ChartCard({ title, subtitle, right, children, empty, className = "", fill = false }) {
-  return (
-    <div
-      className={`rounded-xl2 border border-mist-200 bg-white p-3.5 shadow-panel dark:border-white/10 dark:bg-ink-900 sm:p-4 ${
-        fill ? "flex h-full flex-col" : ""
-      } ${className}`}
-    >
-      <div className="mb-2.5 flex items-center justify-between gap-2">
-        <div>
-          <h3 className="font-display text-sm font-bold text-ink-950 dark:text-white">{title}</h3>
-          {subtitle && <p className="text-[11px] text-mist-500 dark:text-mist-300">{subtitle}</p>}
-        </div>
-        {right || <MoreHorizontal size={16} className="shrink-0 text-mist-400 dark:text-mist-500" />}
-      </div>
-      {empty ? (
-        <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-          <Inbox size={20} className="text-mist-300 dark:text-mist-500" />
-          <p className="text-xs text-mist-500 dark:text-mist-300">No data for this range</p>
-        </div>
-      ) : (
-        <div className={`overflow-x-auto ${fill ? "flex flex-1 flex-col justify-center" : ""}`}>
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Donut with a real total centered inside the ring, Sellix-style.
-function CenterLabelDonut({ height, centerValue, centerLabel, children }) {
-  return (
-    <div className="relative" style={{ height }}>
-      {children}
-      <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center">
-        <p className="font-display text-lg font-bold text-ink-950 dark:text-white">{centerValue}</p>
-        <p className="text-[10px] font-medium text-mist-500 dark:text-mist-300">{centerLabel}</p>
-      </div>
-    </div>
-  );
-}
-
-// Sellix "Visitors"-style leaderboard: name + share bar + percentage, no
-// map/geo dependency, so it never degrades into an empty/odd shape when
-// there are only a couple of locations in range.
-function LocationLeaderboard({ rows, unitLabel }) {
-  const total = rows.reduce((sum, r) => sum + r.totalRevenue, 0) || 1;
-  const ranked = [...rows].sort((a, b) => b.totalRevenue - a.totalRevenue).slice(0, 6);
-
-  return (
-    <div className="flex flex-col gap-3">
-      {ranked.map((r, i) => {
-        const pct = Math.round((r.totalRevenue / total) * 100);
-        return (
-          <div key={r.name} className="flex items-center gap-3">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-[11px] font-bold text-orange-700 dark:bg-orange-500/15 dark:text-orange-400">
-              {i + 1}
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="mb-1 flex items-center justify-between gap-2">
-                <p className="truncate text-xs font-semibold text-ink-950 dark:text-white">{r.name}</p>
-                <p className="shrink-0 text-xs font-bold text-orange-600 dark:text-orange-400">{pct}%</p>
-              </div>
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-mist-100 dark:bg-white/10">
-                <div
-                  className="h-full rounded-full bg-orange-500"
-                  style={{ width: `${Math.max(pct, 3)}%` }}
-                />
-              </div>
-            </div>
-            <p className="w-16 shrink-0 text-right text-[11px] text-mist-500 dark:text-mist-300">
-              {formatCompactCurrency(r.totalRevenue)}
-            </p>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 export default function AnalyticsPage() {
   const { theme } = useTheme();
@@ -252,16 +75,25 @@ export default function AnalyticsPage() {
     endDate: today,
     groupBy: "day",
     includeCancelled: false,
+    includeInvoices: true,
   });
   const [locationTab, setLocationTab] = useState(LOCATION_TABS[0].key);
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState(null);
+  const [orderData, setOrderData] = useState(null);
+  // Every invoice, fetched once and filtered here per date range; the
+  // Refresh button refetches them.
+  const [allInvoices, setAllInvoices] = useState(null);
 
-  const load = async () => {
+  const load = async (refreshInvoices = false) => {
     setLoading(true);
     try {
-      const res = await ManualOrderService.getAnalytics(filters);
-      setData(res?.data || null);
+      const needInvoices = filters.includeInvoices && (refreshInvoices || !allInvoices);
+      const [res, invoices] = await Promise.all([
+        ManualOrderService.getAnalytics(filters),
+        needInvoices ? fetchAllInvoices(InvoiceService.getAllInvoices) : null,
+      ]);
+      setOrderData(res?.data || null);
+      if (invoices) setAllInvoices(invoices);
     } catch (err) {
       toast.error(err?.response?.data?.message || "Could not load analytics");
     } finally {
@@ -269,24 +101,47 @@ export default function AnalyticsPage() {
     }
   };
 
+  // includeInvoices only needs the invoices (fetched once), not the backend.
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters]);
+  }, [filters.startDate, filters.endDate, filters.groupBy, filters.includeCancelled]);
 
+  useEffect(() => {
+    if (filters.includeInvoices && !allInvoices && orderData) {
+      fetchAllInvoices(InvoiceService.getAllInvoices)
+        .then(setAllInvoices)
+        .catch(() => toast.error("Could not load invoices"));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.includeInvoices]);
+
+  // Orders from the backend + invoices made directly on the Invoices page.
+  const directInvoices = useMemo(
+    () =>
+      filters.includeInvoices && allInvoices ? directInvoicesInRange(allInvoices, filters) : [],
+    [allInvoices, filters]
+  );
+  const data = useMemo(
+    () => mergeInvoiceAnalytics(orderData, directInvoices, filters.groupBy),
+    [orderData, directInvoices, filters.groupBy]
+  );
   const summary = data?.summary;
 
   const trendDataset = useMemo(
     () =>
-      (data?.salesTrend || []).map((d) => ({
-        ...d,
+      (data?.salesTrend || []).map((salesTrendEntry) => ({
+        ...salesTrendEntry,
         label:
           filters.groupBy === "month"
-            ? new Date(`${d.date}-01`).toLocaleDateString("en-IN", {
+            ? new Date(`${salesTrendEntry.date}-01`).toLocaleDateString("en-IN", {
                 month: "short",
                 year: "numeric",
               })
-            : new Date(d.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }),
+            : new Date(salesTrendEntry.date).toLocaleDateString("en-IN", {
+                day: "2-digit",
+                month: "short",
+              }),
       })),
     [data, filters.groupBy]
   );
@@ -294,44 +149,50 @@ export default function AnalyticsPage() {
   const orderStatusPie = useMemo(() => {
     const rows = data?.ordersByStatus || [];
     const ordered = [...rows].sort(
-      (a, b) => ORDER_STATUS_ORDER.indexOf(a.status) - ORDER_STATUS_ORDER.indexOf(b.status)
+      (rowA, rowB) =>
+        ORDER_STATUS_ORDER.indexOf(rowA.status) - ORDER_STATUS_ORDER.indexOf(rowB.status)
     );
-    return ordered.map((r) => ({
-      id: r.status,
-      value: r.count,
-      label: labelize(r.status),
-      color: STATUS_COLORS[r.status] || "#F2701C",
+    return ordered.map((statusRow) => ({
+      id: statusRow.status,
+      value: statusRow.count,
+      label: labelize(statusRow.status),
+      color: STATUS_COLORS[statusRow.status] || "#F2701C",
     }));
   }, [data]);
   const orderStatusTotal = useMemo(
-    () => orderStatusPie.reduce((sum, r) => sum + r.value, 0),
+    () => orderStatusPie.reduce((sum, orderStatusPieEntry) => sum + orderStatusPieEntry.value, 0),
     [orderStatusPie]
   );
 
   const paymentStatusBars = useMemo(() => {
     const rows = data?.paymentStatusBreakdown || [];
     return [...rows].sort(
-      (a, b) =>
-        PAYMENT_STATUS_ORDER.indexOf(a.paymentStatus) - PAYMENT_STATUS_ORDER.indexOf(b.paymentStatus)
+      (rowA, rowB) =>
+        PAYMENT_STATUS_ORDER.indexOf(rowA.paymentStatus) -
+        PAYMENT_STATUS_ORDER.indexOf(rowB.paymentStatus)
     );
   }, [data]);
   const paymentStatusPie = useMemo(
     () =>
-      paymentStatusBars.map((r) => ({
-        id: r.paymentStatus,
-        value: r.count,
-        label: labelize(r.paymentStatus),
-        color: STATUS_COLORS[r.paymentStatus] || "#F2701C",
+      paymentStatusBars.map((paymentStatusBar) => ({
+        id: paymentStatusBar.paymentStatus,
+        value: paymentStatusBar.count,
+        label: labelize(paymentStatusBar.paymentStatus),
+        color: STATUS_COLORS[paymentStatusBar.paymentStatus] || "#F2701C",
       })),
     [paymentStatusBars]
   );
   const paymentStatusTotal = useMemo(
-    () => paymentStatusPie.reduce((sum, r) => sum + r.value, 0),
+    () =>
+      paymentStatusPie.reduce((sum, paymentStatusPieEntry) => sum + paymentStatusPieEntry.value, 0),
     [paymentStatusPie]
   );
 
   const topProducts = useMemo(
-    () => [...(data?.topProducts || [])].sort((a, b) => b.totalQuantitySold - a.totalQuantitySold),
+    () =>
+      [...(data?.topProducts || [])].sort(
+        (topProductA, topProductB) => topProductB.totalQuantitySold - topProductA.totalQuantitySold
+      ),
     [data]
   );
 
@@ -340,72 +201,83 @@ export default function AnalyticsPage() {
   // earlier stage too, so each stage sums itself plus everything after it.
   const funnelStages = useMemo(() => {
     const rows = data?.ordersByStatus || [];
-    const countOf = (s) => rows.find((r) => r.status === s)?.count || 0;
-    const reachedDelivered = countOf("delivered") + countOf("partial_returned") + countOf("returned");
+    const countOf = (status) => rows.find((row) => row.status === status)?.count || 0;
+    const reachedDelivered =
+      countOf("delivered") + countOf("partial_returned") + countOf("returned");
     const raw = {
-      placed: countOf("placed") + countOf("packed") + countOf("confirmed") + countOf("shipped") + reachedDelivered,
+      placed:
+        countOf("placed") +
+        countOf("packed") +
+        countOf("confirmed") +
+        countOf("shipped") +
+        reachedDelivered,
       packed: countOf("packed") + countOf("confirmed") + countOf("shipped") + reachedDelivered,
       confirmed: countOf("confirmed") + countOf("shipped") + reachedDelivered,
       shipped: countOf("shipped") + reachedDelivered,
       delivered: reachedDelivered,
     };
-    return FUNNEL_STAGES.map((s, i) => ({
-      ...s,
-      count: raw[s.stage],
-      color: FUNNEL_RAMP[i].bg,
-      text: FUNNEL_RAMP[i].text,
+    return FUNNEL_STAGES.map((funnelStage, index) => ({
+      ...funnelStage,
+      count: raw[funnelStage.stage],
+      color: FUNNEL_RAMP[index].bg,
+      text: FUNNEL_RAMP[index].text,
     }));
   }, [data]);
-  const funnelHasData = funnelStages.some((s) => s.count > 0);
+  const funnelHasData = funnelStages.some((funnelStage) => funnelStage.count > 0);
   const returnedCount = useMemo(() => {
     const rows = data?.ordersByStatus || [];
-    const countOf = (s) => rows.find((r) => r.status === s)?.count || 0;
+    const countOf = (status) => rows.find((row) => row.status === status)?.count || 0;
     return countOf("partial_returned") + countOf("returned");
   }, [data]);
 
   const radarProducts = useMemo(() => [...(data?.topProducts || [])].slice(0, 5), [data]);
   const radarMax = useMemo(
     () => ({
-      units: Math.max(1, ...radarProducts.map((p) => p.totalQuantitySold)),
-      revenue: Math.max(1, ...radarProducts.map((p) => p.totalRevenue)),
-      orders: Math.max(1, ...radarProducts.map((p) => p.totalOrders)),
+      units: Math.max(1, ...radarProducts.map((radarProduct) => radarProduct.totalQuantitySold)),
+      revenue: Math.max(1, ...radarProducts.map((radarProduct) => radarProduct.totalRevenue)),
+      orders: Math.max(1, ...radarProducts.map((radarProduct) => radarProduct.totalOrders)),
     }),
     [radarProducts]
   );
 
   const scatterPoints = useMemo(
     () =>
-      (data?.salesTrend || []).map((d) => ({
-        id: d.date,
-        x: d.totalOrders,
-        y: d.totalRevenue,
+      (data?.salesTrend || []).map((salesTrendEntry) => ({
+        id: salesTrendEntry.date,
+        x: salesTrendEntry.totalOrders,
+        y: salesTrendEntry.totalRevenue,
       })),
     [data]
   );
 
-  const activeLocationTab = LOCATION_TABS.find((t) => t.key === locationTab);
+  const activeLocationTab = LOCATION_TABS.find(
+    (currentLocationTab) => currentLocationTab.key === locationTab
+  );
   const locationRows = useMemo(
     () =>
       [...(data?.[locationTab] || [])]
-        .sort((a, b) => a.totalRevenue - b.totalRevenue)
-        .map((r) => ({ ...r, name: r[activeLocationTab.field] })),
+        .sort((entryA, entryB) => entryA.totalRevenue - entryB.totalRevenue)
+        .map((entry) => ({ ...entry, name: entry[activeLocationTab.field] })),
     [data, locationTab, activeLocationTab]
   );
   const locationRowsDesc = useMemo(() => [...locationRows].reverse(), [locationRows]);
 
-  const firstName =
-    user?.firstName || (user?.email ? user.email.split("@")[0] : null) || "there";
+  const firstName = user?.firstName || (user?.email ? user.email.split("@")[0] : null) || "there";
 
   const locationTabSwitcher = (
     <ToggleButtonGroup
       size="small"
       value={locationTab}
       exclusive
-      onChange={(_, v) => v && setLocationTab(v)}
+      onChange={(_, selectedTab) => selectedTab && setLocationTab(selectedTab)}
     >
-      {LOCATION_TABS.map((t) => (
-        <ToggleButton key={t.key} value={t.key} sx={{ textTransform: "none", px: 1.5, py: 0.25 }}>
-          {t.label}
+      {LOCATION_TABS.map((locationTab) => (
+        <ToggleButton
+          key={locationTab.key}
+          value={locationTab.key}
+          sx={{ textTransform: "none", px: 1.5, py: 0.25 }}
+        >
+          {locationTab.label}
         </ToggleButton>
       ))}
     </ToggleButtonGroup>
@@ -426,7 +298,9 @@ export default function AnalyticsPage() {
                 type="date"
                 value={filters.startDate}
                 max={filters.endDate}
-                onChange={(e) => setFilters((f) => ({ ...f, startDate: e.target.value }))}
+                onChange={(event) =>
+                  setFilters((prevFilters) => ({ ...prevFilters, startDate: event.target.value }))
+                }
                 className="rounded-lg border border-mist-200 bg-white px-2.5 py-1.5 text-xs text-ink-950 outline-none focus:border-orange-500 dark:border-ink-700 dark:bg-ink-900 dark:text-white"
               />
             </div>
@@ -437,7 +311,9 @@ export default function AnalyticsPage() {
                 value={filters.endDate}
                 min={filters.startDate}
                 max={today}
-                onChange={(e) => setFilters((f) => ({ ...f, endDate: e.target.value }))}
+                onChange={(event) =>
+                  setFilters((prevFilters) => ({ ...prevFilters, endDate: event.target.value }))
+                }
                 className="rounded-lg border border-mist-200 bg-white px-2.5 py-1.5 text-xs text-ink-950 outline-none focus:border-orange-500 dark:border-ink-700 dark:bg-ink-900 dark:text-white"
               />
             </div>
@@ -445,7 +321,9 @@ export default function AnalyticsPage() {
               size="small"
               value={filters.groupBy}
               exclusive
-              onChange={(_, v) => v && setFilters((f) => ({ ...f, groupBy: v }))}
+              onChange={(_, groupBy) =>
+                groupBy && setFilters((prevFilters) => ({ ...prevFilters, groupBy: groupBy }))
+              }
             >
               <ToggleButton value="day" sx={{ textTransform: "none", px: 1.5 }}>
                 Daily
@@ -459,16 +337,38 @@ export default function AnalyticsPage() {
                 <Switch
                   size="small"
                   checked={filters.includeCancelled}
-                  onChange={(e) =>
-                    setFilters((f) => ({ ...f, includeCancelled: e.target.checked }))
+                  onChange={(event) =>
+                    setFilters((prevFilters) => ({
+                      ...prevFilters,
+                      includeCancelled: event.target.checked,
+                    }))
                   }
                 />
               }
-              label={<span className="text-xs text-mist-700 dark:text-mist-300">Include cancelled</span>}
+              label={
+                <span className="text-xs text-mist-700 dark:text-mist-300">Include cancelled</span>
+              }
+            />
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small"
+                  checked={filters.includeInvoices}
+                  onChange={(event) =>
+                    setFilters((prevFilters) => ({
+                      ...prevFilters,
+                      includeInvoices: event.target.checked,
+                    }))
+                  }
+                />
+              }
+              label={
+                <span className="text-xs text-mist-700 dark:text-mist-300">Include invoices</span>
+              }
             />
           </div>
           <button
-            onClick={load}
+            onClick={() => load(true)}
             disabled={loading}
             className="flex items-center justify-center gap-1.5 self-start rounded-lg border border-mist-200 px-3 py-1.5 text-xs font-semibold text-mist-700 hover:bg-mist-50 disabled:opacity-50 dark:border-white/10 dark:text-mist-300 dark:hover:bg-white/5"
           >
@@ -483,7 +383,9 @@ export default function AnalyticsPage() {
         ) : !data ? (
           <div className="flex flex-col items-center justify-center gap-2 rounded-xl2 border border-mist-200 bg-white py-20 text-center shadow-panel dark:border-white/10 dark:bg-ink-900">
             <Inbox size={28} className="text-mist-300 dark:text-mist-500" />
-            <p className="text-sm font-medium text-ink-950 dark:text-white">No analytics available</p>
+            <p className="text-sm font-medium text-ink-950 dark:text-white">
+              No analytics available
+            </p>
           </div>
         ) : (
           <>
@@ -510,6 +412,11 @@ export default function AnalyticsPage() {
                   icon={Users}
                   label="Unique customers"
                   value={summary.totalUniqueCustomers.toLocaleString("en-IN")}
+                  sub={
+                    summary.directInvoiceCustomers
+                      ? `${summary.directInvoiceCustomers} on direct invoices`
+                      : undefined
+                  }
                 />
               </div>
 
@@ -527,7 +434,8 @@ export default function AnalyticsPage() {
                         outerRadius: "100%",
                         paddingAngle: 2,
                         cornerRadius: 3,
-                        valueFormatter: (item) => `${item.value} order${item.value === 1 ? "" : "s"}`,
+                        valueFormatter: (item) =>
+                          `${item.value} order${item.value === 1 ? "" : "s"}`,
                       },
                     ]}
                     height={isMobile ? 172 : 152}
@@ -536,15 +444,17 @@ export default function AnalyticsPage() {
                   />
                 </CenterLabelDonut>
                 <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1.5">
-                  {orderStatusPie.map((r) => (
-                    <div key={r.id} className="flex items-center gap-1.5 text-xs">
+                  {orderStatusPie.map((orderStatusPieEntry) => (
+                    <div key={orderStatusPieEntry.id} className="flex items-center gap-1.5 text-xs">
                       <span
                         className="h-2 w-2 shrink-0 rounded-sm"
-                        style={{ backgroundColor: r.color }}
+                        style={{ backgroundColor: orderStatusPieEntry.color }}
                       />
-                      <span className="truncate text-mist-600 dark:text-mist-300">{r.label}</span>
+                      <span className="truncate text-mist-600 dark:text-mist-300">
+                        {orderStatusPieEntry.label}
+                      </span>
                       <span className="ml-auto shrink-0 font-semibold text-ink-950 dark:text-white">
-                        {r.value}
+                        {orderStatusPieEntry.value}
                       </span>
                     </div>
                   ))}
@@ -554,7 +464,11 @@ export default function AnalyticsPage() {
 
             {/* ---------- SALES DISTRIBUTION (half-donut) + STAGE TILES + REVENUE OVERVIEW ---------- */}
             <div className="grid grid-cols-1 items-start gap-3.5 lg:grid-cols-[1fr_1fr_1.6fr]">
-              <ChartCard title="Sales Distribution" subtitle="By payment status" empty={paymentStatusPie.length === 0}>
+              <ChartCard
+                title="Sales Distribution"
+                subtitle="By payment status"
+                empty={paymentStatusPie.length === 0}
+              >
                 <div className="flex justify-center">
                   <RadialTickRing
                     rows={paymentStatusPie}
@@ -565,17 +479,25 @@ export default function AnalyticsPage() {
                   />
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3">
-                  {paymentStatusPie.map((r) => {
-                    const pct = paymentStatusTotal ? Math.round((r.value / paymentStatusTotal) * 100) : 0;
+                  {paymentStatusPie.map((paymentStatusPieEntry) => {
+                    const pct = paymentStatusTotal
+                      ? Math.round((paymentStatusPieEntry.value / paymentStatusTotal) * 100)
+                      : 0;
                     return (
-                      <div key={r.id} className="flex items-start gap-2">
-                        <span className="mt-1 h-2 w-2 shrink-0 rounded-sm" style={{ backgroundColor: r.color }} />
+                      <div key={paymentStatusPieEntry.id} className="flex items-start gap-2">
+                        <span
+                          className="mt-1 h-2 w-2 shrink-0 rounded-sm"
+                          style={{ backgroundColor: paymentStatusPieEntry.color }}
+                        />
                         <div className="min-w-0">
-                          <p className="truncate text-[11px] text-mist-500 dark:text-mist-300">{r.label}</p>
+                          <p className="truncate text-[11px] text-mist-500 dark:text-mist-300">
+                            {paymentStatusPieEntry.label}
+                          </p>
                           <p className="text-sm font-bold text-ink-950 dark:text-white">
                             {pct}%{" "}
                             <span className="text-[11px] font-medium text-mist-500 dark:text-mist-300">
-                              {r.value} order{r.value === 1 ? "" : "s"}
+                              {paymentStatusPieEntry.value} order
+                              {paymentStatusPieEntry.value === 1 ? "" : "s"}
                             </span>
                           </p>
                         </div>
@@ -586,8 +508,13 @@ export default function AnalyticsPage() {
               </ChartCard>
 
               <div className="grid auto-rows-fr grid-cols-2 gap-3.5 self-stretch">
-                {funnelStages.slice(1, 4).map((s) => (
-                  <StageTile key={s.stage} icon={s.icon} label={s.label} value={s.count} />
+                {funnelStages.slice(1, 4).map((funnelStage) => (
+                  <StageTile
+                    key={funnelStage.stage}
+                    icon={funnelStage.icon}
+                    label={funnelStage.label}
+                    value={funnelStage.count}
+                  />
                 ))}
                 <StageTile icon={RotateCcw} label="Returned" value={returnedCount} />
               </div>
@@ -595,13 +522,17 @@ export default function AnalyticsPage() {
               <ChartCard
                 title="Revenue Overview"
                 subtitle={`Grouped by ${filters.groupBy}`}
-                right={<span className="text-xs font-semibold text-mist-500 dark:text-mist-300">{formatCurrency(summary.totalRevenue)}</span>}
+                right={
+                  <span className="text-xs font-semibold text-mist-500 dark:text-mist-300">
+                    {formatCurrency(summary.totalRevenue)}
+                  </span>
+                }
                 empty={trendDataset.length === 0}
               >
                 <LineChart
                   dataset={trendDataset}
                   xAxis={[{ scaleType: "point", dataKey: "label" }]}
-                  yAxis={[{ valueFormatter: (v) => formatCompactCurrency(v) }]}
+                  yAxis={[{ valueFormatter: (amount) => formatCompactCurrency(amount) }]}
                   series={[
                     {
                       id: "revenue",
@@ -611,11 +542,16 @@ export default function AnalyticsPage() {
                       area: true,
                       showMark: trendDataset.length <= 20,
                       curve: "monotoneX",
-                      valueFormatter: (v) => formatCurrency(v),
+                      valueFormatter: (amount) => formatCurrency(amount),
                     },
                   ]}
                   height={isMobile ? 220 : 232}
-                  margin={{ left: isMobile ? 40 : 60, right: isMobile ? 12 : 28, top: 14, bottom: 28 }}
+                  margin={{
+                    left: isMobile ? 40 : 60,
+                    right: isMobile ? 12 : 28,
+                    top: 14,
+                    bottom: 28,
+                  }}
                   grid={{ horizontal: true }}
                   hideLegend
                 >
@@ -646,7 +582,8 @@ export default function AnalyticsPage() {
                         dataKey: "totalOrders",
                         label: "Orders",
                         color: CHART_PALETTE[0],
-                        valueFormatter: (v) => `${v} order${v === 1 ? "" : "s"}`,
+                        valueFormatter: (orderCount) =>
+                          `${orderCount} order${orderCount === 1 ? "" : "s"}`,
                       },
                     ]}
                     margin={{ left: isMobile ? 32 : 46, right: 14, top: 14, bottom: 28 }}
@@ -669,27 +606,36 @@ export default function AnalyticsPage() {
 
             {/* ---------- TOP PRODUCTS (list, Sellix-style) + PRODUCT PROFILE RADAR (same height) ---------- */}
             <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
-              <ChartCard title="Top Products" subtitle="By units sold" empty={topProducts.length === 0} fill>
+              <ChartCard
+                title="Top Products"
+                subtitle="By units sold"
+                empty={topProducts.length === 0}
+                fill
+              >
                 <div className="flex flex-col divide-y divide-mist-100 dark:divide-white/10">
-                  {topProducts.slice(0, 6).map((p) => (
-                    <div key={p.productName} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                  {topProducts.slice(0, 6).map((topProduct) => (
+                    <div
+                      key={topProduct.productName}
+                      className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"
+                    >
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-xs font-bold text-orange-700 dark:bg-orange-500/15 dark:text-orange-400">
-                        {initials(p.productName)}
+                        {initials(topProduct.productName)}
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold text-ink-950 dark:text-white">
-                          {p.productName}
+                          {topProduct.productName}
                         </p>
                         <p className="text-[11px] text-mist-500 dark:text-mist-300">
-                          {p.totalOrders} order{p.totalOrders === 1 ? "" : "s"}
+                          {topProduct.totalOrders} order{topProduct.totalOrders === 1 ? "" : "s"}
                         </p>
                       </div>
                       <div className="shrink-0 text-right">
                         <p className="text-sm font-bold text-ink-950 dark:text-white">
-                          {formatCurrency(p.totalRevenue)}
+                          {formatCurrency(topProduct.totalRevenue)}
                         </p>
                         <p className="text-[11px] text-mist-500 dark:text-mist-300">
-                          {p.totalQuantitySold} unit{p.totalQuantitySold === 1 ? "" : "s"}
+                          {topProduct.totalQuantitySold} unit
+                          {topProduct.totalQuantitySold === 1 ? "" : "s"}
                         </p>
                       </div>
                     </div>
@@ -713,25 +659,34 @@ export default function AnalyticsPage() {
                         { name: RADAR_METRICS[2], max: radarMax.orders },
                       ],
                     }}
-                    series={radarProducts.map((p, i) => ({
-                      id: p.productName,
-                      label: p.productName,
-                      data: [p.totalQuantitySold, p.totalRevenue, p.totalOrders],
-                      color: CHART_PALETTE[i % CHART_PALETTE.length],
+                    series={radarProducts.map((radarProduct, index) => ({
+                      id: radarProduct.productName,
+                      label: radarProduct.productName,
+                      data: [
+                        radarProduct.totalQuantitySold,
+                        radarProduct.totalRevenue,
+                        radarProduct.totalOrders,
+                      ],
+                      color: CHART_PALETTE[index % CHART_PALETTE.length],
                       fillArea: true,
-                      valueFormatter: (v, ctx) =>
-                        ctx.dataIndex === 1 ? formatCurrency(v) : `${v}`,
+                      valueFormatter: (value, ctx) =>
+                        ctx.dataIndex === 1 ? formatCurrency(value) : `${value}`,
                     }))}
                     hideLegend
                   />
                   <div className="mt-2 flex flex-col gap-1.5">
-                    {radarProducts.map((p, i) => (
-                      <div key={p.productName} className="flex items-center gap-2 text-xs">
+                    {radarProducts.map((radarProduct, index) => (
+                      <div
+                        key={radarProduct.productName}
+                        className="flex items-center gap-2 text-xs"
+                      >
                         <span
                           className="h-2.5 w-2.5 shrink-0 rounded-sm"
-                          style={{ backgroundColor: CHART_PALETTE[i % CHART_PALETTE.length] }}
+                          style={{ backgroundColor: CHART_PALETTE[index % CHART_PALETTE.length] }}
                         />
-                        <span className="truncate text-mist-600 dark:text-mist-300">{p.productName}</span>
+                        <span className="truncate text-mist-600 dark:text-mist-300">
+                          {radarProduct.productName}
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -752,11 +707,13 @@ export default function AnalyticsPage() {
                     data: scatterPoints,
                     color: CHART_PALETTE[0],
                     markerSize: 7,
-                    valueFormatter: (v) => `${v.x} orders · ${formatCurrency(v.y)}`,
+                    valueFormatter: (point) => `${point.x} orders · ${formatCurrency(point.y)}`,
                   },
                 ]}
                 xAxis={[{ label: "Orders", min: 0 }]}
-                yAxis={[{ label: "Revenue", valueFormatter: (v) => formatCompactCurrency(v) }]}
+                yAxis={[
+                  { label: "Revenue", valueFormatter: (amount) => formatCompactCurrency(amount) },
+                ]}
                 height={isMobile ? 230 : 260}
                 margin={{ left: isMobile ? 44 : 62, right: 20, top: 14, bottom: 36 }}
                 grid={{ horizontal: true, vertical: true }}
@@ -786,17 +743,24 @@ export default function AnalyticsPage() {
                   layout="horizontal"
                   dataset={locationRows}
                   yAxis={[{ scaleType: "band", dataKey: "name", width: isMobile ? 66 : 96 }]}
-                  xAxis={[{ label: "Revenue", valueFormatter: (v) => formatCompactCurrency(v) }]}
+                  xAxis={[
+                    { label: "Revenue", valueFormatter: (amount) => formatCompactCurrency(amount) },
+                  ]}
                   series={[
                     {
                       dataKey: "totalRevenue",
                       label: "Revenue",
                       color: CHART_PALETTE[0],
-                      valueFormatter: (v) => formatCurrency(v),
+                      valueFormatter: (amount) => formatCurrency(amount),
                     },
                   ]}
                   height={Math.max(190, locationRows.length * (isMobile ? 32 : 38))}
-                  margin={{ left: isMobile ? 56 : 90, right: isMobile ? 28 : 40, top: 14, bottom: 28 }}
+                  margin={{
+                    left: isMobile ? 56 : 90,
+                    right: isMobile ? 28 : 40,
+                    top: 14,
+                    bottom: 28,
+                  }}
                   grid={{ vertical: true }}
                   hideLegend
                   borderRadius={4}

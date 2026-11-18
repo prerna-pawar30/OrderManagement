@@ -1,4 +1,9 @@
-import React from "react";
+/**
+ * Sends visitors who are not logged in to /login.
+ *
+ * Used by: routes/AppRoutes.jsx
+ */
+
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 

@@ -13,7 +13,7 @@
     @apply bg-orange-100 text-orange-700;
   }
   *:focus-visible {
-    outline: 2px solid #F2701C;
+    outline: 2px solid #f2701c;
     outline-offset: 2px;
   }
 }
@@ -24,10 +24,10 @@
     height: 6px;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: #C7C7C7;
+    background: #c7c7c7;
     border-radius: 999px;
   }
   .dark .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: #3D3D3D;
+    background: #3d3d3d;
   }
 }

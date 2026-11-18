@@ -1,11 +1,20 @@
-import React, { useEffect, useMemo, useState } from "react";
+/**
+ * Who owes whom: every customer's balance worked out from their invoices, with filters and a drawer
+ * per customer.
+ *
+ * Route: /customer-ledger
+ * Used by: routes/AppRoutes.jsx
+ * API: InvoiceService.getAllInvoices, InvoiceService.getCustomers
+ */
+
+import { useEffect, useMemo, useState } from "react";
 import { Search, Loader2, Inbox, Wallet, HandCoins, ScrollText } from "lucide-react";
 import toast from "react-hot-toast";
-import { InvoiceService } from "../api/services";
-import { fetchAllInvoices, buildInvoiceLedger } from "../lib/invoiceCustomers";
-import { BalanceStatusBadge } from "../components/StatusBadge";
-import CustomerLedgerDrawer from "../components/CustomerLedgerDrawer";
-import { formatCurrency, formatDateTime, initials } from "../lib/format";
+import { InvoiceService } from "../backend/ApiService";
+import { fetchAllInvoices, buildInvoiceLedger } from "../utils/InvoiceCustomers";
+import { BalanceStatusBadge } from "../components/order/StatusBadge";
+import CustomerLedgerDrawer from "../components/customer/CustomerLedgerDrawer";
+import { formatCurrency, formatDateTime, initials } from "../utils/Format";
 
 const STATUS_FILTERS = [
   { value: "", label: "All customers" },
@@ -24,7 +33,7 @@ export default function CustomerLedgerPage() {
 
   // Clicking a row opens the ledger card for that customer (totals + invoices).
   const [activeCustomer, setActiveCustomer] = useState(null);
-  const openCustomer = (c) => setActiveCustomer(c);
+  const openCustomer = (customer) => setActiveCustomer(customer);
 
   // Ledger is worked out from invoices (lib/invoiceCustomers.js) — the old
   // /manual-order/ledger endpoint only counted manual orders, so directly
@@ -48,7 +57,6 @@ export default function CustomerLedgerPage() {
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filtered = useMemo(() => {
@@ -56,19 +64,22 @@ export default function CustomerLedgerPage() {
     // customers where either side still owes money.
     let list =
       statusFilter === "__pending__"
-        ? customers.filter((c) => c.balanceStatus !== "settled")
+        ? customers.filter((customer) => customer.balanceStatus !== "settled")
         : statusFilter
-        ? customers.filter((c) => c.balanceStatus === statusFilter)
-        : customers;
+          ? customers.filter((customer) => customer.balanceStatus === statusFilter)
+          : customers;
 
     if (query.trim()) {
-      const q = query.trim().toLowerCase();
-      const digits = q.replace(/\D/g, "");
+      const searchText = query.trim().toLowerCase();
+      const digits = searchText.replace(/\D/g, "");
       list = list.filter(
-        (c) =>
-          c.customerName?.toLowerCase().includes(q) ||
-          c.contactPerson?.toLowerCase().includes(q) ||
-          (digits && String(c.customerPhone || "").replace(/\D/g, "").includes(digits))
+        (customer) =>
+          customer.customerName?.toLowerCase().includes(searchText) ||
+          customer.contactPerson?.toLowerCase().includes(searchText) ||
+          (digits &&
+            String(customer.customerPhone || "")
+              .replace(/\D/g, "")
+              .includes(digits))
       );
     }
     return list;
@@ -118,22 +129,25 @@ export default function CustomerLedgerPage() {
 
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full sm:w-80">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-mist-400 dark:text-mist-500" />
+          <Search
+            size={16}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-mist-400 dark:text-mist-500"
+          />
           <input
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(event) => setQuery(event.target.value)}
             placeholder="Search customer, contact person, phone…"
             className="w-full rounded-lg border border-mist-200 bg-white py-2.5 pl-9 pr-3 text-sm text-ink-950 outline-none focus:border-orange-500 dark:border-ink-700 dark:bg-ink-900 dark:text-white dark:placeholder:text-mist-500"
           />
         </div>
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(event) => setStatusFilter(event.target.value)}
           className="w-full rounded-lg border border-mist-200 bg-white px-3.5 py-2.5 text-sm text-ink-950 outline-none focus:border-orange-500 dark:border-ink-700 dark:bg-ink-900 dark:text-white sm:w-56"
         >
-          {STATUS_FILTERS.map((f) => (
-            <option key={f.value} value={f.value}>
-              {f.label}
+          {STATUS_FILTERS.map((statusFilter) => (
+            <option key={statusFilter.value} value={statusFilter.value}>
+              {statusFilter.label}
             </option>
           ))}
         </select>
@@ -147,8 +161,12 @@ export default function CustomerLedgerPage() {
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
             <Inbox size={28} className="text-mist-300 dark:text-mist-500" />
-            <p className="text-sm font-medium text-ink-950 dark:text-white">No customers match here yet</p>
-            <p className="text-xs text-mist-500 dark:text-mist-300">Try a different search or filter.</p>
+            <p className="text-sm font-medium text-ink-950 dark:text-white">
+              No customers match here yet
+            </p>
+            <p className="text-xs text-mist-500 dark:text-mist-300">
+              Try a different search or filter.
+            </p>
           </div>
         ) : (
           <>
@@ -166,48 +184,52 @@ export default function CustomerLedgerPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((c) => (
+                  {filtered.map((customer) => (
                     <tr
-                      key={c.groupKey}
-                      onClick={() => openCustomer(c)}
+                      key={customer.groupKey}
+                      onClick={() => openCustomer(customer)}
                       className="cursor-pointer border-b border-mist-100 align-top last:border-0 hover:bg-mist-50 dark:border-white/10 dark:hover:bg-white/5"
                     >
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2.5">
                           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-ink-950 text-xs font-bold text-white">
-                            {initials(c.customerName)}
+                            {initials(customer.customerName)}
                           </span>
                           <div>
                             <p className="font-medium text-ink-950 hover:underline dark:text-white">
-                              {c.customerName}
+                              {customer.customerName}
                             </p>
-                            <p className="text-xs text-mist-500 dark:text-mist-300">{c.customerPhone}</p>
+                            <p className="text-xs text-mist-500 dark:text-mist-300">
+                              {customer.customerPhone}
+                            </p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-5 py-3.5 text-mist-700 dark:text-mist-300">{c.totalOrders}</td>
+                      <td className="px-5 py-3.5 text-mist-700 dark:text-mist-300">
+                        {customer.totalOrders}
+                      </td>
                       <td className="px-5 py-3.5 font-medium text-ink-950 dark:text-white">
-                        {formatCurrency(c.totalOrderValue)}
+                        {formatCurrency(customer.totalOrderValue)}
                       </td>
                       <td className="px-5 py-3.5 text-mist-700 dark:text-mist-300">
-                        {formatCurrency(c.totalReturnedValue)}
+                        {formatCurrency(customer.totalReturnedValue)}
                       </td>
                       <td
                         className={`px-5 py-3.5 font-semibold ${
-                          c.balanceStatus === "customer_owes"
+                          customer.balanceStatus === "customer_owes"
                             ? "text-coral-500"
-                            : c.balanceStatus === "company_owes"
-                            ? "text-amber-500"
-                            : "text-mint-500"
+                            : customer.balanceStatus === "company_owes"
+                              ? "text-amber-500"
+                              : "text-mint-500"
                         }`}
                       >
-                        {formatCurrency(Math.abs(c.netBalance))}
+                        {formatCurrency(Math.abs(customer.netBalance))}
                       </td>
                       <td className="px-5 py-3.5">
-                        <BalanceStatusBadge status={c.balanceStatus} />
+                        <BalanceStatusBadge status={customer.balanceStatus} />
                       </td>
                       <td className="px-5 py-3.5 text-xs text-mist-500 dark:text-mist-300">
-                        {formatDateTime(c.lastOrderAt)}
+                        {formatDateTime(customer.lastOrderAt)}
                       </td>
                     </tr>
                   ))}
@@ -217,56 +239,64 @@ export default function CustomerLedgerPage() {
 
             {/* Cards for phones/tablets */}
             <div className="divide-y divide-mist-100 dark:divide-white/10 lg:hidden">
-              {filtered.map((c) => (
+              {filtered.map((customer) => (
                 <div
-                  key={c.groupKey}
-                  onClick={() => openCustomer(c)}
+                  key={customer.groupKey}
+                  onClick={() => openCustomer(customer)}
                   className="cursor-pointer p-4 hover:bg-mist-50 dark:hover:bg-white/5"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-2.5">
                       <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink-950 text-xs font-bold text-white">
-                        {initials(c.customerName)}
+                        {initials(customer.customerName)}
                       </span>
                       <div className="min-w-0">
-                        <p className="truncate font-medium text-ink-950 dark:text-white">{c.customerName}</p>
-                        <p className="text-xs text-mist-500 dark:text-mist-300">{c.customerPhone}</p>
+                        <p className="truncate font-medium text-ink-950 dark:text-white">
+                          {customer.customerName}
+                        </p>
+                        <p className="text-xs text-mist-500 dark:text-mist-300">
+                          {customer.customerPhone}
+                        </p>
                       </div>
                     </div>
-                    <BalanceStatusBadge status={c.balanceStatus} />
+                    <BalanceStatusBadge status={customer.balanceStatus} />
                   </div>
 
                   <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                     <div>
                       <p className="text-mist-500 dark:text-mist-300">Orders</p>
-                      <p className="font-medium text-ink-950 dark:text-white">{c.totalOrders}</p>
+                      <p className="font-medium text-ink-950 dark:text-white">
+                        {customer.totalOrders}
+                      </p>
                     </div>
                     <div>
                       <p className="text-mist-500 dark:text-mist-300">Order value</p>
-                      <p className="font-medium text-ink-950 dark:text-white">{formatCurrency(c.totalOrderValue)}</p>
+                      <p className="font-medium text-ink-950 dark:text-white">
+                        {formatCurrency(customer.totalOrderValue)}
+                      </p>
                     </div>
                     <div>
                       <p className="text-mist-500 dark:text-mist-300">Returned</p>
                       <p className="font-medium text-ink-950 dark:text-white">
-                        {formatCurrency(c.totalReturnedValue)}
+                        {formatCurrency(customer.totalReturnedValue)}
                       </p>
                     </div>
                   </div>
 
                   <div className="mt-3 flex items-center justify-between border-t border-mist-100 pt-3 dark:border-white/10">
                     <p className="text-xs text-mist-500 dark:text-mist-300">
-                      Last order {formatDateTime(c.lastOrderAt)}
+                      Last order {formatDateTime(customer.lastOrderAt)}
                     </p>
                     <p
                       className={`font-semibold ${
-                        c.balanceStatus === "customer_owes"
+                        customer.balanceStatus === "customer_owes"
                           ? "text-coral-500"
-                          : c.balanceStatus === "company_owes"
-                          ? "text-amber-500"
-                          : "text-mint-500"
+                          : customer.balanceStatus === "company_owes"
+                            ? "text-amber-500"
+                            : "text-mint-500"
                       }`}
                     >
-                      {formatCurrency(Math.abs(c.netBalance))}
+                      {formatCurrency(Math.abs(customer.netBalance))}
                     </p>
                   </div>
                 </div>

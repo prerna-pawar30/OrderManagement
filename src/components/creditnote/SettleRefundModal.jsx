@@ -1,0 +1,209 @@
+/**
+ * Records how an order's pending refund was settled (cash, bank, card, store credit), moving the
+ * order towards "refunded".
+ *
+ * Used by: components/order/OrderDetailDrawer.jsx, pages/OrdersListPage.jsx
+ * API: InvoiceService.settleCredit
+ */
+
+import { useMemo, useState } from "react";
+import { X as CloseIcon, Loader2, Undo2 } from "lucide-react";
+import toast from "react-hot-toast";
+import { InvoiceService } from "../../backend/ApiService";
+import { Field, Select, TextInput } from "../ui/FormField";
+import { formatCurrency } from "../../utils/Format";
+import { generateCreditNotePdf } from "../../utils/CreditNotePdf";
+
+// Works out how much is still owed on this order — mirrors the same
+// calculation the backend does, just for display before the staff commits.
+const outstandingOn = (order) => {
+  if (order.orderStatus === "cancelled") {
+    return Math.max(Number(order.refundAmount || 0) - Number(order.partialRefundAmount || 0), 0);
+  }
+  // Same proration as ReturnOrderModal: returned items' raw price × qty
+  // overstates what's owed once the order's own discount/applied credit is
+  // accounted for, so scale it down by the same ratio before showing it.
+  const itemsSubtotal = (order.items || []).reduce(
+    (total, item) => total + Number(item.price) * Number(item.quantity),
+    0
+  );
+  const discountRatio = itemsSubtotal > 0 ? Number(order.discount || 0) / itemsSubtotal : 0;
+  const totalReturnedValue =
+    (order.returnRequests || []).reduce(
+      (sum, returnRequest) =>
+        sum +
+        (returnRequest.items || []).reduce(
+          (total, item) => total + Number(item.price) * Number(item.quantity),
+          0
+        ),
+      0
+    ) *
+    (1 - discountRatio);
+  return Math.max(totalReturnedValue - Number(order.partialRefundAmount || 0), 0);
+};
+
+/**
+ * This is the ONLY way an order sitting at "refund_pending" or
+ * "partial_refunded" moves toward "refunded" once the return itself has
+ * already been recorded — createManualReturnService only auto-settles it
+ * if "I've already refunded this" was ticked at return time.
+ */
+export default function SettleRefundModal({ order, onClose, onDone }) {
+  const outstanding = useMemo(() => outstandingOn(order), [order]);
+
+  const [method, setMethod] = useState("cash");
+  const [amount, setAmount] = useState(String(outstanding));
+  const [reference, setReference] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    const value = Number(amount);
+    if (!value || value <= 0) {
+      toast.error("Enter a valid amount");
+      return;
+    }
+    if (value > outstanding + 0.01) {
+      toast.error(`Can't settle more than what's owed (${formatCurrency(outstanding)})`);
+      return;
+    }
+    if (!order.invoiceId) {
+      toast.error("This order has no linked invoice yet — refunds are settled on the invoice now");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await InvoiceService.settleCredit(order.invoiceId, {
+        amount: value,
+        method,
+        reference: reference.trim() || undefined,
+      });
+
+      if (method === "credit_note" && res?.data) {
+        toast.success("Marked as settled via store credit");
+        try {
+          // The invoice's own settleInvoiceRefundService only has the
+          // invoice's current line items to fall back on (accurate for a
+          // standalone invoice, but not "what was actually returned" for a
+          // manual order). Since we're right here with the real order,
+          // build the accurate returned-items list from its own
+          // returnRequests instead of trusting the generic fallback.
+          const returnedItems = (order.returnRequests || []).flatMap(
+            (returnRequest) => returnRequest.items || []
+          );
+          await generateCreditNotePdf({
+            refundId: res.data.refundId,
+            amount: res.data.amountSettled,
+            refundedAt: new Date().toISOString(),
+            refundedBy: res.data.refundedBy,
+            sourceOrderId: res.data.sourceOrderId,
+            sourceInvoiceNumber: res.data.sourceInvoiceNumber || res.data.invoiceNumber,
+            orderDate: res.data.orderDate,
+            customerName: res.data.customerName || order.customerName,
+            customerPhone: res.data.customerPhone || order.customerPhone,
+            customerEmail: res.data.customerEmail || order.customerEmail,
+            returnedItems: returnedItems.length > 0 ? returnedItems : res.data.returnedItems,
+            appliedToOrderId: res.data.appliedToOrderId,
+            appliedInvoiceNumber: res.data.appliedInvoiceNumber,
+            appliedOrderDate: res.data.appliedOrderDate,
+            appliedOrderGrandTotal: res.data.appliedOrderGrandTotal,
+            appliedOrderItems: res.data.appliedOrderItems,
+            sourceOrderGstPercentage: res.data.sourceOrderGstPercentage,
+          });
+        } catch (pdfErr) {
+          // Non-fatal — the credit note is still saved and downloadable
+          // later from the Credit Notes page even if this PDF failed.
+        }
+      } else {
+        toast.success("Refund marked as paid");
+      }
+      onDone();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || "Could not settle the refund");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-ink-950/50 px-4">
+      <div className="w-full max-w-md rounded-xl2 bg-white p-6 shadow-panel dark:bg-ink-900">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-2.5">
+            <span className="grid h-9 w-9 place-items-center rounded-full bg-amber-100 text-amber-500 dark:bg-amber-500/15 dark:text-amber-400">
+              <Undo2 size={17} />
+            </span>
+            <div>
+              <h3 className="font-display text-base font-bold text-ink-950 dark:text-white">
+                Settle refund
+              </h3>
+              <p className="text-xs text-mist-500 dark:text-mist-300">
+                {order.orderId} · {formatCurrency(outstanding)} owed
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="text-mist-400 hover:text-ink-950 dark:text-mist-500 dark:hover:text-white"
+          >
+            <CloseIcon size={18} />
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          <Field label="How was this settled?" required>
+            <Select value={method} onChange={(event) => setMethod(event.target.value)}>
+              <option value="cash">Cash — paid back in person</option>
+              <option value="upi">UPI</option>
+              <option value="bank_transfer">Bank transfer</option>
+              <option value="card">Card</option>
+              <option value="other">Other</option>
+              <option value="credit_note">Store credit — they'll take it next time</option>
+            </Select>
+          </Field>
+          <Field label="Amount" required hint={`Up to ${formatCurrency(outstanding)}`}>
+            <TextInput
+              type="number"
+              min="0"
+              max={outstanding}
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+            />
+          </Field>
+          {method !== "credit_note" && (
+            <Field label="Reference" hint="Optional — transaction ID, cheque no., etc.">
+              <TextInput
+                value={reference}
+                onChange={(event) => setReference(event.target.value)}
+                placeholder="e.g. UPI ref 302819..."
+              />
+            </Field>
+          )}
+          {method === "credit_note" && (
+            <p className="text-xs text-mist-500 dark:text-mist-300">
+              This just records that the credit is spoken for — apply it as a discount when you
+              create their next order (use "Check credit" there).
+            </p>
+          )}
+        </div>
+
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            disabled={loading}
+            className="rounded-lg border border-mist-200 px-4 py-2 text-sm font-medium text-mist-700 hover:bg-mist-50 disabled:opacity-60 dark:border-white/10 dark:text-mist-300 dark:hover:bg-white/5"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={loading}
+            className="flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500/90 disabled:opacity-60"
+          >
+            {loading && <Loader2 size={14} className="animate-spin" />}
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
